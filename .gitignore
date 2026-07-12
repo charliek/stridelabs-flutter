@@ -1,0 +1,30 @@
+# Dart/Flutter — https://dart.dev/guides/libraries/private-files
+
+# Build + tool output
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.pub-cache/
+.pub/
+
+# Resolved dependency lockfiles (library packages don't commit these)
+pubspec.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.iws
+.atom/
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# Coverage
+coverage/
+
+# OS
+.DS_Store
