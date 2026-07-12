@@ -1,0 +1,5 @@
+# Dart/Flutter build + tool output for this package.
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+pubspec.lock

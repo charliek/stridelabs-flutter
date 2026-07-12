@@ -1,0 +1,16 @@
+name: stridelabs_logging
+description: "Namespaced app logging for StrideLabs Flutter apps — a debugPrint wrapper that tags each line with a subsystem area, plus a crash-sink seam for a future crash-reporting backend."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
