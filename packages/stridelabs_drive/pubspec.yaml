@@ -1,0 +1,20 @@
+name: stridelabs_drive
+description: "Debug-only agent-driving helpers for StrideLabs Flutter apps — Marionette binding bootstrap, flutter-test detection, and the greppable MSTATE/MRESULT drive-state log contract."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Agent-driving binding: forwards debugPrint into a log collector an agent
+  # reads over the Dart VM Service. Debug-only; tree-shaken from release builds.
+  marionette_flutter: ^0.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
