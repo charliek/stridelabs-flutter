@@ -148,7 +148,7 @@ void main() {
       final login = _buildLogin(adapter);
 
       final tokens = await login.login(
-        email: 'test@local.stridelabs.ai',
+        email: 'test@example.com',
         password: 'secret',
       );
 
