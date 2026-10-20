@@ -16,6 +16,12 @@ const bool _kProfileMode = bool.fromEnvironment('dart.vm.profile');
 const bool kIsDebugMode = !_kReleaseMode && !_kProfileMode;
 
 /// Thrown when the headless login flow fails at a specific step.
+///
+/// [message] names the step and at most an HTTP status, a Dio error category,
+/// an error class or a registered OAuth2 error code. It never carries a URL
+/// (the authorize URLs hold `state` and the PKCE challenge), a response body
+/// (token responses hold tokens), a value from either, or another exception's
+/// text, so it is safe to print or show.
 class HeadlessLoginException implements Exception {
   HeadlessLoginException(this.message);
   final String message;
@@ -36,6 +42,10 @@ class HeadlessLoginException implements Exception {
 /// a live driving tool. It is hard-guarded to debug builds: constructing it
 /// in a release/profile build throws. There is intentionally NO CORS/Origin
 /// handling — that is a web-browser concern, not a native-client one.
+///
+/// Every failure is a [HeadlessLoginException] with a redacted message (see
+/// there): network and decode errors are reduced to their step, status and
+/// category, never passed through.
 class HeadlessLogin {
   HeadlessLogin({required this.config, Dio? dio, CookieJar? cookieJar})
     : _jar = cookieJar ?? CookieJar() {
@@ -66,12 +76,45 @@ class HeadlessLogin {
   /// Maximum manual redirect hops before giving up (the probe needs 5).
   static const _maxHops = 12;
 
+  /// OAuth2 (RFC 6749 §4.1.2.1) and OIDC Core (§3.1.2.6) authorization error
+  /// codes: the only `error` values a failure message may repeat. Anything
+  /// else in the callback's `error` is server-controlled text and is dropped.
+  static const _knownAuthorizeErrors = {
+    'invalid_request',
+    'unauthorized_client',
+    'access_denied',
+    'unsupported_response_type',
+    'invalid_scope',
+    'server_error',
+    'temporarily_unavailable',
+    'interaction_required',
+    'login_required',
+    'account_selection_required',
+    'consent_required',
+    'invalid_request_uri',
+    'invalid_request_object',
+    'request_not_supported',
+    'request_uri_not_supported',
+    'registration_not_supported',
+  };
+
   /// Run the full flow. Returns the parsed `/oauth2/token` response
   /// (`access_token`, `refresh_token`, `id_token`, `expires_in`, ...).
+  ///
+  /// Throws a [HeadlessLoginException] (redacted) on any failure.
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
-  }) async {
+  }) {
+    final step = _Step('login flow');
+    return _redacted(step, () => _login(email, password, step));
+  }
+
+  Future<Map<String, dynamic>> _login(
+    String email,
+    String password,
+    _Step step,
+  ) async {
     final base = config.baseUrl;
 
     // 1. Kratos password login (browser flow, JSON) → session cookie.
@@ -82,14 +125,15 @@ class HeadlessLogin {
         responseType: ResponseType.json,
       ),
     );
-    final flow = _asMap(flowRes.data);
-    final ui = _asMap(flow['ui']);
+    final flow = _asMap(flowRes.data, step);
+    final ui = _asMap(flow['ui'], step);
     final action = ui['action'] as String?;
     if (action == null) {
       throw HeadlessLoginException('login flow missing ui.action');
     }
     final csrf = _extractCsrf(ui['nodes']);
 
+    step.name = 'kratos login';
     final loginRes = await _dio.post(
       action,
       data: jsonEncode({
@@ -128,6 +172,7 @@ class HeadlessLogin {
 
     String? code;
     for (var hop = 0; hop < _maxHops; hop++) {
+      step.name = 'authorize hop $hop';
       final r = await _dio.get(
         url,
         options: Options(
@@ -138,8 +183,9 @@ class HeadlessLogin {
       );
       final status = r.statusCode ?? 0;
       if (status < 300 || status > 399) {
+        // Never the URL: it carries `state` and the PKCE challenge.
         throw HeadlessLoginException(
-          'authorize hop $hop: expected redirect, got $status at $url',
+          'authorize hop $hop: expected a redirect, got HTTP $status',
         );
       }
       final location = r.headers.value('location');
@@ -149,8 +195,13 @@ class HeadlessLogin {
       url = Uri.parse(url).resolve(location).toString();
       if (url.startsWith(config.redirectUri)) {
         final q = Uri.parse(url).queryParameters;
-        if (q.containsKey('error')) {
-          throw HeadlessLoginException('authorize error: ${q['error']}');
+        final error = q['error'];
+        if (error != null) {
+          // Only a registered error code: the value is server-controlled.
+          final known = _knownAuthorizeErrors.contains(error);
+          throw HeadlessLoginException(
+            'authorize error: ${known ? error : '(unrecognized error code)'}',
+          );
         }
         if (q['state'] != state) {
           throw HeadlessLoginException('state mismatch');
@@ -166,6 +217,7 @@ class HeadlessLogin {
     }
 
     // 3. Token exchange (native: no Origin header, form-encoded).
+    step.name = 'token exchange';
     final tokenRes = await _dio.post(
       '$base/oauth2/token',
       data: {
@@ -185,7 +237,7 @@ class HeadlessLogin {
         'token exchange failed: ${tokenRes.statusCode}',
       );
     }
-    final tokens = _asMap(tokenRes.data);
+    final tokens = _asMap(tokenRes.data, step);
     if (tokens['access_token'] is! String) {
       throw HeadlessLoginException('token response missing access_token');
     }
@@ -194,35 +246,78 @@ class HeadlessLogin {
 
   /// Exercise refresh-token rotation once (used by a live driving tool to
   /// prove the token rotates). Returns the refreshed token response.
-  Future<Map<String, dynamic>> refresh(String refreshToken) async {
-    final res = await _dio.post(
-      '${config.baseUrl}/oauth2/token',
-      data: {
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
-        'client_id': config.clientId,
-      },
-      options: Options(
-        contentType: Headers.formUrlEncodedContentType,
-        responseType: ResponseType.json,
-      ),
-    );
-    if (res.statusCode != 200) {
-      throw HeadlessLoginException('refresh failed: ${res.statusCode}');
+  ///
+  /// Throws a [HeadlessLoginException] (redacted) on any failure.
+  Future<Map<String, dynamic>> refresh(String refreshToken) {
+    final step = _Step('refresh');
+    return _redacted(step, () async {
+      final res = await _dio.post(
+        '${config.baseUrl}/oauth2/token',
+        data: {
+          'grant_type': 'refresh_token',
+          'refresh_token': refreshToken,
+          'client_id': config.clientId,
+        },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          responseType: ResponseType.json,
+        ),
+      );
+      if (res.statusCode != 200) {
+        throw HeadlessLoginException('refresh failed: ${res.statusCode}');
+      }
+      return _asMap(res.data, step);
+    });
+  }
+
+  /// Run [body], letting its own [HeadlessLoginException]s through and
+  /// replacing anything else with a redacted one naming the current step.
+  ///
+  /// A [DioException]'s text can carry the request URL (with `state` and the
+  /// PKCE challenge) or a decode error quoting the response body; other
+  /// errors (a [FormatException] from a malformed `Location`, a cast error)
+  /// can quote values too. Only the step, the HTTP status, the Dio category
+  /// and the error class survive.
+  static Future<T> _redacted<T>(_Step step, Future<T> Function() body) async {
+    try {
+      return await body();
+    } on HeadlessLoginException {
+      rethrow;
+    } on DioException catch (e) {
+      if (e.error is FormatException) {
+        // Dio's own JSON decode failed (its message quotes the body).
+        throw HeadlessLoginException(
+          '${step.name}: response body is not valid JSON',
+        );
+      }
+      final status = e.response?.statusCode;
+      throw HeadlessLoginException(
+        '${step.name} failed: ${e.type.name}'
+        '${status == null ? '' : ' (HTTP $status)'}',
+      );
+    } catch (e) {
+      throw HeadlessLoginException('${step.name} failed: ${e.runtimeType}');
     }
-    return _asMap(res.data);
   }
 
   /// Coerce a Dio `response.data` (Map, or a raw String when the Content-Type
-  /// sniff misfires) into a JSON object.
-  Map<String, dynamic> _asMap(Object? raw) {
+  /// sniff misfires) into a JSON object. Failures name [step] and the shape,
+  /// never the body (`jsonDecode`'s own message quotes it).
+  static Map<String, dynamic> _asMap(Object? raw, _Step step) {
     if (raw is Map<String, dynamic>) return raw;
+    Object? value = raw;
     if (raw is String) {
-      final parsed = jsonDecode(raw);
-      if (parsed is Map<String, dynamic>) return parsed;
+      try {
+        value = jsonDecode(raw);
+      } on FormatException {
+        throw HeadlessLoginException(
+          '${step.name}: response body is not valid JSON',
+        );
+      }
+      if (value is Map<String, dynamic>) return value;
     }
     throw HeadlessLoginException(
-      'expected a JSON object, got ${raw.runtimeType}',
+      '${step.name}: expected a JSON object, got ${value.runtimeType}',
     );
   }
 
@@ -238,4 +333,10 @@ class HeadlessLogin {
     }
     return '';
   }
+}
+
+/// The request a flow is on, for [HeadlessLoginException] messages.
+class _Step {
+  _Step(this.name);
+  String name;
 }
