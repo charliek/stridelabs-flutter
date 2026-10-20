@@ -139,7 +139,7 @@ happened:
 | `unauthorized` | dead grant; logged out |
 | `unavailable` | transient fault; session kept (retry scheduled if enabled) |
 | `noSession` | no refresh token to use |
-| `discarded` | the session ended (logout or a new sign-in) while the call was in flight, or the service was disposed; its result was not applied |
+| `discarded` | the session ended (logout or a new sign-in) while the call was in flight, so its result was not applied; or the call was made after `dispose()`, so no request was sent (a refresh already in flight at `dispose()` is applied: see Disposal) |
 
 Concurrent callers of either method share one endpoint call, as long as they
 are refreshing the same session. A refresh is tied to the session whose tokens
