@@ -7,7 +7,7 @@ slaudio mobile app so multiple apps can depend on one implementation.
 
 | Package | What it is |
 | --- | --- |
-| [`packages/stridelabs_slauth`](packages/stridelabs_slauth) | slauth (Ory Hydra + Kratos) OAuth2 PKCE client: system-browser login, token exchange, refresh with rotation, at-rest token storage (keychain on mobile, `0600` files on desktop), and a debug-only headless password login for local E2E driving. |
+| [`packages/stridelabs_slauth`](packages/stridelabs_slauth) | OAuth2 PKCE client, slauth (Ory Hydra + Kratos) by default and any provider via a pluggable `TokenEndpoint` and `AuthConfig`: system-browser login, token exchange, refresh with rotation, at-rest token storage (keychain on mobile, `0600` files on desktop), and a debug-only headless password login for local E2E driving. See its [README](packages/stridelabs_slauth/README.md). |
 | [`packages/stridelabs_drive`](packages/stridelabs_drive) | Debug-only agent-driving helpers built on [Marionette](https://pub.dev/packages/marionette_flutter): binding bootstrap, `flutter test` detection, and the greppable `MSTATE`/`MRESULT` drive-state log contract. Tree-shakes out of release builds. |
 | [`packages/stridelabs_logging`](packages/stridelabs_logging) | Namespaced app logging: a `debugPrint` wrapper that tags each line with a subsystem area (`[area] message`), plus a crash-sink seam for a future crash-reporting backend. |
 
@@ -18,12 +18,13 @@ dependencies pinned to a release tag, from the app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  stridelabs_slauth: {git: {url: git@github.com:charliek/stridelabs-flutter.git, ref: v0.1.0, path: packages/stridelabs_slauth}}
+  stridelabs_slauth: {git: {url: https://github.com/charliek/stridelabs-flutter.git, ref: v0.1.0, path: packages/stridelabs_slauth}}
 ```
 
-The `path:` selects the package subdirectory within this monorepo; `ref:` pins
-the release tag. Do the same for `stridelabs_drive` / `stridelabs_logging`
-(adjust the `path:`).
+The repo is public, so use the `https` URL (no SSH key needed in CI or on a
+new machine). The `path:` selects the package subdirectory within this
+monorepo; `ref:` pins the release tag. Do the same for `stridelabs_drive` /
+`stridelabs_logging` (adjust the `path:`).
 
 ## Releasing (pin-and-bump)
 

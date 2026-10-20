@@ -32,5 +32,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  # Deterministic time for the proactive-refresh / dedup tests.
+  # Deterministic time for the proactive-refresh / dedup / retry tests.
   fake_async: ^1.3.1
+  # Fake plugin platform: proves WebAuthOptions reach FlutterWebAuth2.authenticate.
+  flutter_web_auth_2_platform_interface: ^5.0.0
