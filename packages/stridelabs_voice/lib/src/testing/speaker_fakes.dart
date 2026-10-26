@@ -3,7 +3,7 @@ import 'dart:io' show HttpException, SocketException;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:stridelabs_voice/stridelabs_voice.dart';
+import '../../stridelabs_voice.dart';
 
 // The reply speaker's fakes, the union of lumen's and tapper's
 // (`test/fakes/speaker_fakes.dart` in both apps) with D1 §8.4's changes:
@@ -12,7 +12,7 @@ import 'package:stridelabs_voice/stridelabs_voice.dart';
 // FakeTtsCall per send(); the player and the clip files take the media type;
 // the new FakeTtsAuth (plus `pendingRetry` and `refreshes`, for the app's
 // pending-retry guard). No Riverpod overrides: the speaker takes its ports.
-// F4 moves them into `testing.dart`.
+// Public through `testing.dart`.
 
 /// A few bytes standing in for an MP3 (an ID3 tag's start).
 const List<int> kFakeMp3 = [0x49, 0x44, 0x33, 1, 2, 3];

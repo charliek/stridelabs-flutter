@@ -35,6 +35,10 @@
 ///   app's, its extension from the clip's media type).
 /// - Debug lines: [VoiceDebugSink], [defaultVoiceDebugSink] and the pinned
 ///   `MVOICE` vocabulary [kMvoiceEvents].
+///
+/// Two more entry points: `package:stridelabs_voice/testing.dart` (the
+/// fakes, for tests) and `package:stridelabs_voice/wav_mic.dart` (a WAV file
+/// as the microphone, for an app's debug code).
 library;
 
 export 'src/assembly/sentence_assembler.dart';
@@ -56,5 +60,3 @@ export 'src/transport/mic_capture.dart';
 export 'src/transport/relay_channel.dart';
 export 'src/transport/relay_voice_transport.dart';
 export 'src/transport/voice_transport.dart';
-
-// The fakes go in `testing.dart` (a later unit).

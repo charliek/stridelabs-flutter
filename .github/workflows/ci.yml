@@ -19,6 +19,7 @@ jobs:
           - packages/stridelabs_slauth
           - packages/stridelabs_drive
           - packages/stridelabs_logging
+          - packages/stridelabs_voice
     defaults:
       run:
         working-directory: ${{ matrix.package }}

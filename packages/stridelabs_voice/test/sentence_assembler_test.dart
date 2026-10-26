@@ -394,6 +394,40 @@ void main() {
       expect(splitSpokenChunk('a\u{1F600}b', 2), ['a', '\u{1F600}', 'b']);
     });
 
+    // One 800-character sentence: two chunks under 600, one under 1200.
+    final eight = '${List.filled(160, 'word').join(' ')}.';
+
+    test('a revised final repeats nothing after the bound was raised', () {
+      final a = SentenceAssembler();
+      final first = a.assistantPartial('$eight ');
+      expect(first, hasLength(2), reason: 'split under 600');
+      expect(first.join(' '), eight);
+
+      a.maxSpokenChunk = 1200;
+      // The final opens with a new sentence, so it is not a continuation of
+      // the spoken prefix: only what was not said is spoken.
+      expect(a.assistantFinal('Updated opening. $eight'), ['Updated opening.']);
+    });
+
+    test('a revised final repeats nothing after the bound was lowered', () {
+      final a = SentenceAssembler(maxSpokenChunk: 1200);
+      expect(a.assistantPartial('$eight '), [eight]);
+
+      a.maxSpokenChunk = kTtsMinTextChars;
+      expect(a.assistantFinal('Updated opening. $eight'), ['Updated opening.']);
+    });
+
+    test('a revised final under a lowered bound splits only what is new', () {
+      final a = SentenceAssembler(maxSpokenChunk: 1200);
+      expect(a.assistantPartial('$eight '), [eight]);
+
+      a.maxSpokenChunk = kTtsMinTextChars;
+      final out = a.assistantFinal('Updated opening. $eight $long');
+      expect(out.first, 'Updated opening.');
+      expect(out.skip(1).join(' '), long);
+      expect(out.skip(1).every((c) => c.length <= kTtsMinTextChars), isTrue);
+    });
+
     test('a bound under 1 is refused, by the constructor and the setter', () {
       expect(
         () => SentenceAssembler(maxSpokenChunk: 0),

@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:stridelabs_voice/stridelabs_voice.dart';
+import '../../stridelabs_voice.dart';
 
 // The relay's fakes, the union of lumen's and tapper's
 // (`test/fakes/relay_fakes.dart` in both apps) with D1 §8.4's changes: the
 // pacing lead a parameter, `ready()` with the advertised fields, `sendRaw`,
-// and the server's `acceptedRates`. F4 moves them into `testing.dart`.
+// and the server's `acceptedRates`. Public through `testing.dart`.
 
 /// Stands in for `package:record`: a permission answer, per-rate refusals,
 /// and a chunk stream the test feeds.
@@ -299,9 +299,5 @@ class FakeRelayServer {
     return violations;
   }
 }
-
-/// [length] bytes of "speech": every byte [value] (never silence).
-Uint8List speech(int length, {int value = 1}) =>
-    Uint8List(length)..fillRange(0, length, value);
 
 bool isSilence(Uint8List frame) => frame.every((b) => b == 0);

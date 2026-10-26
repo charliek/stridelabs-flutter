@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
 import 'package:stridelabs_voice/stridelabs_voice.dart';
+import 'package:stridelabs_voice/testing.dart';
 
-import 'support/relay_fakes.dart';
+import 'support/speech.dart';
 
 /// [RelayVoiceTransport] driven through a fake recorder and a fake relay
 /// socket, under fakeAsync (the ready deadline, the 429 retry, the mic-off

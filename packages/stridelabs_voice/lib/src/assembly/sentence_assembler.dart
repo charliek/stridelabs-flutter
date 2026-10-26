@@ -76,7 +76,10 @@ class SentenceAssembler {
   /// The cursor is inside a fenced code block.
   bool _inFence = false;
 
-  /// Every chunk emitted this turn, in order.
+  /// Every sentence emitted this turn, in order, as cleaned text BEFORE it
+  /// was split to [maxSpokenChunk]: what a revised final is deduplicated
+  /// against, so a change of the bound between the partial and the final
+  /// never makes a spoken sentence look new.
   final List<String> _spokenThisTurn = [];
 
   /// What has been spoken (or skipped) of the current model response.
@@ -112,8 +115,8 @@ class SentenceAssembler {
     _restartResponse();
     _response = text;
     final out = [
-      for (final chunk in _drain(text, atEnd: true))
-        if (!alreadySaid.remove(chunk)) chunk,
+      for (final sentence in _drain(text, atEnd: true))
+        if (!alreadySaid.remove(sentence)) sentence,
     ];
     return _said(out);
   }
@@ -138,9 +141,14 @@ class SentenceAssembler {
     _inFence = false;
   }
 
-  List<String> _said(List<String> chunks) {
-    _spokenThisTurn.addAll(chunks);
-    return chunks;
+  /// Records [sentences] as said and returns them split to the current
+  /// [maxSpokenChunk]: the chunks to speak.
+  List<String> _said(List<String> sentences) {
+    _spokenThisTurn.addAll(sentences);
+    return [
+      for (final sentence in sentences)
+        ...splitSpokenChunk(sentence, maxSpokenChunk),
+    ];
   }
 
   /// The current model response is over (a tool round ran): its unspoken
@@ -165,8 +173,9 @@ class SentenceAssembler {
     return finalText.length - finalTrimmed.length + spokenTrimmed.length;
   }
 
-  /// Scans [text] from the cursor, emitting every chunk whose boundary is
-  /// certain. With [atEnd] the text is complete and the tail is a chunk too.
+  /// Scans [text] from the cursor, returning every sentence (cleaned, not yet
+  /// split to the bound) whose boundary is certain. With [atEnd] the text is
+  /// complete and the tail is a sentence too.
   /// The cursor (and the fence state) only advance past committed text, so a
   /// later, longer partial rescans exactly what was left undecided.
   List<String> _drain(String text, {required bool atEnd}) {
@@ -199,7 +208,7 @@ class SentenceAssembler {
           // An opening fence ends the chunk before it. The fence is entered
           // only once its line is complete, so inside a fence the cursor
           // always rests at a line start.
-          _emitChunk(out, text, chunkStart, i);
+          _addSentence(out, text, chunkStart, i);
           commit(i);
           if (!lineComplete) break;
           _inFence = true;
@@ -211,7 +220,7 @@ class SentenceAssembler {
 
       final c = text.codeUnitAt(i);
       if (c == _newline) {
-        _emitChunk(out, text, chunkStart, i);
+        _addSentence(out, text, chunkStart, i);
         commit(i + 1);
         continue;
       }
@@ -225,13 +234,13 @@ class SentenceAssembler {
         }
         if (j >= text.length) {
           if (!atEnd) break; // Whether this ends the sentence is not known yet.
-          _emitChunk(out, text, chunkStart, j);
+          _addSentence(out, text, chunkStart, j);
           commit(j);
           continue;
         }
         if (_isSpace(text.codeUnitAt(j)) &&
             !(j == i + 1 && c == _period && _isFalseStop(text, i))) {
-          _emitChunk(out, text, chunkStart, j);
+          _addSentence(out, text, chunkStart, j);
           commit(j);
           continue;
         }
@@ -242,7 +251,7 @@ class SentenceAssembler {
     }
 
     if (atEnd && chunkStart < text.length) {
-      _emitChunk(out, text, chunkStart, text.length);
+      _addSentence(out, text, chunkStart, text.length);
       commit(text.length);
     }
     return out;
@@ -262,14 +271,14 @@ class SentenceAssembler {
     return false;
   }
 
-  void _emitChunk(List<String> out, String text, int start, int end) {
+  void _addSentence(List<String> out, String text, int start, int end) {
     if (end <= start) return;
     final cleaned = _clean(
       text.substring(start, end),
       atLineStart: _onlySpaceBefore(text, start),
     );
     if (!_speakable.hasMatch(cleaned)) return;
-    out.addAll(splitSpokenChunk(cleaned, maxSpokenChunk));
+    out.add(cleaned);
   }
 }
 

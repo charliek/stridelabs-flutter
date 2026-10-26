@@ -6,8 +6,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart' show fail;
 import 'package:stridelabs_voice/stridelabs_voice.dart';
-
-import 'speaker_fakes.dart' show kFakeMp3;
+import 'package:stridelabs_voice/testing.dart' show kFakeMp3;
 
 // A scripted `POST /voice/tts` transport under a real Dio, shared by the
 // client's, the transport rule's and the speaker's tests. Test-only: it

@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stridelabs_voice/src/playback/reply_clip_files_io.dart'
     show IoReplyClipFiles;
 import 'package:stridelabs_voice/stridelabs_voice.dart';
+import 'package:stridelabs_voice/testing.dart';
 
-import 'support/speaker_fakes.dart';
 import 'support/tts_server.dart';
 
 /// The reply speaker over its ports — a fake TTS client (or the real
