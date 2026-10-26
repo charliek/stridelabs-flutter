@@ -209,6 +209,75 @@ the `const WebAuthOptions.defaults`) makes the same call as before. The
 The plugin takes whole seconds, so a fractional timeout is rounded up
 (500 ms becomes 1 s), never down to zero.
 
+## Desktop: `LoopbackWebAuth` (opt-in)
+
+On desktop, `flutter_web_auth_2` has no OS secure browser. Its default is an
+embedded webview window (not the user's browser, so no saved logins or
+passkeys), and its `useWebview: false` server mode cancels a pending sign-in
+whenever the app regains focus (which going to the browser and back does), lets
+the last request to its server win (a favicon fetch included), and builds the
+result from request headers.
+
+`LoopbackWebAuth` is a `WebAuth` for that case: the native-app loopback redirect
+of [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252#section-7.3). It opens the
+authorize URL in the user's default browser (`url_launcher`) and waits for the
+redirect on an `HttpServer` it binds on `127.0.0.1:<port>` itself:
+
+```dart
+final webAuth = LoopbackWebAuth(
+  redirect: Uri.parse('http://127.0.0.1:8765/auth/callback'), // registered with the provider
+  landingPageHtml: myLandingPage, // optional; defaultLandingPageHtml otherwise
+);
+final callback = await webAuth.authenticate(
+  url: config.authorizeUrl(codeChallenge: pkce.challenge, state: state),
+  callbackUrlScheme: webAuth.redirect.toString(), // the redirect itself
+);
+// ...then validate the callback and exchange the code, as for any WebAuth.
+```
+
+Nothing selects it for you: `FlutterWebAuth2Impl` is unchanged, and the app
+decides on which platforms to use it (it is proven on Linux).
+
+- **The redirect** must be `http://127.0.0.1:<port>/<path>`, a port from 1024
+  to 65535 (no root needed), with no user info, query or fragment
+  (`LoopbackWebAuth.isLoopbackRedirect`); anything else throws `ArgumentError`.
+  The port is fixed, so it can be registered with the provider.
+- **What it accepts:** exactly one request, a `GET` for the redirect's path
+  whose query has exactly one `state`, equal to the authorize URL's. That
+  request gets the landing page (`text/html; charset=utf-8`, `no-store`, a 2 s
+  bound) and the sign-in completes with the configured redirect plus that
+  query, never anything taken from `Host` or `X-Forwarded-*`. Everything else
+  gets a 404 (400 for a query that does not decode) and the server keeps
+  listening. One attempt at a time: a newer `authenticate` cancels the pending
+  one. The port is released on every outcome before the future settles.
+- **`InteractiveWebAuth`:** `cancel()` ends the pending sign-in (a plain
+  `PlatformException(code: 'CANCELED')`); `reopen()` opens the same authorize
+  URL again while it keeps waiting. No app-lifecycle observer: refocusing the
+  app changes nothing.
+- **Typed failures**, each a `LoopbackAuthFailure` (a `PlatformException`
+  carrying `hostPort`): `LoopbackPortBusy` (the port is held, by another
+  program or another window of the app), `LoopbackNoBrowser` (the launcher
+  failed or the browser check said no) and `LoopbackTimeout` (`timeout`,
+  default 5 minutes). Their messages never carry the authorize URL.
+- **Seams:** `BrowserLauncher` (default `launchInDefaultBrowser`),
+  `BrowserCheck` (asked before each launch) and `DeadlineTimerFactory` (tests).
+  With the default launcher on Linux the check defaults to
+  `linuxDefaultBrowserCheck`: `url_launcher_linux` reports success even when no
+  application handles the URL, so it asks `gio mime` (or `xdg-mime`) in a
+  separate process, bounded to 2 s, and only a definite "no default" stops the
+  launch. Elsewhere, or with an injected launcher, there is no check unless you
+  pass one.
+- **The landing page:** `defaultLandingPageHtml` is a neutral page ("Return to
+  the app to finish signing in"). An app passes its own to name itself; keep it
+  self-contained (no script, no external resource, a `data:` icon so the
+  browser asks for no favicon) and never claim success, since the app has yet
+  to validate the callback and exchange the code.
+- **What stays in the app:** the provider's config (client id, authorize URL,
+  the registered redirect and its port), the callback validation (destination,
+  `state` strictly equal, at most one `state`/`code`/`error`, an `error`
+  mapped before any exchange), the landing page's wording, the messages for
+  each failure, and the choice of platforms.
+
 ## Logging
 
 `AuthService` logs failures with `debugPrint` as one redacted line: the
@@ -224,6 +293,17 @@ response body or an exception's `toString()`. `TokenExchangeRequest`,
 `TokenStore` with `SecureStorageTokenStore` (Android/iOS keychain/keystore),
 `FileTokenStore` (desktop, `0600` files in a `0700` dir) and
 `InMemoryTokenStore`; `defaultTokenStore(appName:)` picks per platform.
+
+`NamespacedTokenStore(inner, namespace: 'x')` keeps every key under `x.` in
+`inner`. On Android/iOS every build of an app shares one secure store under the
+same `slauth_*` keys, so a dev build installed over a prod one (same application
+id) restores the prod session. `defaultTokenStore(appName:, mobileNamespace:)`
+opts out: with `mobileNamespace: 'myapp-dev'` the mobile keys become
+`myapp-dev.slauth_*`. The default (`null`) keeps today's plain `slauth_*` keys,
+so an app that already has sessions in the field is untouched; opting in later
+signs that environment out once, as nothing is migrated. Desktop ignores it: its
+directory comes from `appName`, so an app whose environments share one desktop
+`appName` keeps its own wrapper that namespaces desktop too.
 
 `restoreFromStorage()` (app start) only ever fills an empty in-memory session.
 If a session is already in memory (a sign-in that finished first, or an earlier

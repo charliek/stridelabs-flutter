@@ -1,5 +1,7 @@
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
+import 'loopback_web_auth.dart' show LoopbackWebAuth;
+
 /// Thin wrapper around the system-browser OAuth flow so the login screen can be
 /// widget-tested with a fake implementation injected via a provider.
 abstract class WebAuth {
@@ -121,10 +123,18 @@ class WebAuthOptions {
             Duration.microsecondsPerSecond;
 }
 
-/// Production implementation backed by `flutter_web_auth_2` — opens the OS
+/// Production implementation backed by `flutter_web_auth_2`: opens the OS
 /// "secure browser" (`ASWebAuthenticationSession` on iOS/macOS, Chrome Custom
-/// Tabs on Android, a webview on Linux/Windows) and returns the custom-scheme
-/// callback URI.
+/// Tabs on Android) and returns the callback URI.
+///
+/// On Linux and Windows the plugin has no secure browser. It opens either its
+/// own embedded webview window (`useWebview`, the plugin default; not the
+/// user's browser) or, with `useWebview: false`, the default browser and a
+/// local loopback server. That server mode cancels a pending sign-in whenever
+/// the app regains focus (which going to the browser and coming back does on
+/// desktop), lets the last request (a favicon fetch included) win, and builds
+/// its result from request headers. For a desktop sign-in in the user's
+/// default browser, use [LoopbackWebAuth] instead.
 class FlutterWebAuth2Impl implements WebAuth {
   /// [options] defaults to [WebAuthOptions.defaults], i.e. the plugin's own
   /// defaults (the same call this class made before it took options).

@@ -12,13 +12,20 @@
 ///   (audience explicit).
 /// - [WebAuth] / [FlutterWebAuth2Impl] / [WebAuthOptions] — system-browser
 ///   flow abstraction and its plugin options.
+/// - [LoopbackWebAuth] — opt-in desktop [WebAuth]: the default browser and a
+///   loopback redirect (RFC 8252) on a server it owns; an [InteractiveWebAuth]
+///   (`cancel()`, `reopen()`) with typed [LoopbackAuthFailure]s, injectable
+///   [BrowserLauncher] / [BrowserCheck] / [DeadlineTimerFactory],
+///   [linuxDefaultBrowserCheck] and the [defaultLandingPageHtml].
 /// - [TokenEndpoint] ([TokenExchangeRequest], [TokenResponse],
 ///   [RefreshTokenField]) and [HydraTokenEndpoint] — the token half (exchange,
 ///   refresh), pluggable; Hydra's `/oauth2/token` is the default.
 /// - [AuthEndpointException] — typed endpoint failures: [AuthUnauthorized]
 ///   (dead grant → logout) and [AuthUnavailable] (transient → keep session).
 /// - [TokenStore] and impls ([SecureStorageTokenStore], [FileTokenStore],
-///   [InMemoryTokenStore]) + [defaultTokenStore] / [defaultTokenStoreDir].
+///   [InMemoryTokenStore]) + [defaultTokenStore] (optional `mobileNamespace`) /
+///   [defaultTokenStoreDir]; [NamespacedTokenStore] keeps one environment's keys
+///   apart in a shared store.
 /// - [AuthService] — token lifecycle (exchange, refresh + rotation, persist,
 ///   logout) with the typed [RefreshOutcome] and the opt-in
 ///   [RefreshRetryPolicy].
@@ -35,7 +42,10 @@ export 'src/auth_config.dart';
 export 'src/auth_errors.dart';
 export 'src/auth_service.dart';
 export 'src/authorize_url.dart';
+export 'src/default_browser.dart' show linuxDefaultBrowserCheck;
 export 'src/headless_login.dart';
+export 'src/landing_page.dart';
+export 'src/loopback_web_auth.dart';
 export 'src/pkce.dart';
 export 'src/slauth_config.dart';
 export 'src/token_endpoint.dart';
