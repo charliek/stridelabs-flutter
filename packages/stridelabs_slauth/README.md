@@ -225,6 +225,15 @@ response body or an exception's `toString()`. `TokenExchangeRequest`,
 `FileTokenStore` (desktop, `0600` files in a `0700` dir) and
 `InMemoryTokenStore`; `defaultTokenStore(appName:)` picks per platform.
 
+`NamespacedTokenStore(inner, namespace: 'x')` keeps every key under `x.` in
+`inner`. On Android/iOS every build of an app shares one secure store under the
+same `slauth_*` keys, so a dev build installed over a prod one (same application
+id) restores the prod session. `defaultTokenStore(appName:, mobileNamespace:)`
+opts out: with `mobileNamespace: 'myapp-dev'` the mobile keys become
+`myapp-dev.slauth_*`. The default (`null`) keeps today's plain `slauth_*` keys,
+so an app that already has sessions in the field is untouched; opting in later
+signs that environment out once, as nothing is migrated. Desktop ignores it.
+
 `restoreFromStorage()` (app start) only ever fills an empty in-memory session.
 If a session is already in memory (a sign-in that finished first, or an earlier
 restore), it leaves it alone and returns whether it is a usable access+refresh

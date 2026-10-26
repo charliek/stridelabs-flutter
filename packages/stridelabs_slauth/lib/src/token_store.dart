@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Key/value persistence for auth tokens at rest.
@@ -136,6 +137,39 @@ class InMemoryTokenStore implements TokenStore {
   Future<void> delete(String key) async => _m.remove(key);
 }
 
+/// A [TokenStore] that keeps every key under `<namespace>.` in [inner]: two
+/// namespaces over one backing store never see each other's keys. Every key
+/// [AuthService](auth_service.dart) uses passes through here, its
+/// write-in-progress marker included, so a half-written session of one
+/// namespace never blocks or leaks into another.
+///
+/// Use it where several environments of one app share a backing store, e.g.
+/// dev and prod builds with one application id over Android's secure storage
+/// (see `defaultTokenStore`'s `mobileNamespace`).
+class NamespacedTokenStore implements TokenStore {
+  NamespacedTokenStore(this.inner, {required this.namespace})
+    : _prefix = '$namespace.';
+
+  /// The backing store.
+  final TokenStore inner;
+
+  /// The store name, e.g. `myapp-dev`.
+  final String namespace;
+
+  final String _prefix;
+
+  String _key(String key) => '$_prefix$key';
+
+  @override
+  Future<String?> read(String key) => inner.read(_key(key));
+
+  @override
+  Future<void> write(String key, String value) => inner.write(_key(key), value);
+
+  @override
+  Future<void> delete(String key) => inner.delete(_key(key));
+}
+
 /// Per-OS default application-support directory for [FileTokenStore], resolved
 /// from environment variables (no `path_provider` dependency, so it also works
 /// from a plain `dart run` tool):
@@ -153,6 +187,14 @@ String defaultTokenStoreDir({String appName = 'slaudio-mobile'}) {
   return '$home/.local/share/$appName';
 }
 
+/// Test-only override of [defaultTokenStore]'s platform check, in the style of
+/// Flutter's `debugDefaultTargetPlatformOverride`: `true` takes the Android/iOS
+/// branch, `false` the desktop one, `null` (the default) asks [Platform]. It lets
+/// a test on a desktop host exercise the PUBLIC [defaultTokenStore] (in
+/// particular its `mobileNamespace` forwarding). Reset it to `null` afterwards.
+@visibleForTesting
+bool? debugTokenStoreMobileOverride;
+
 /// The platform-appropriate default store:
 ///
 /// - Android / iOS → [SecureStorageTokenStore] (OS-backed secure enclave)
@@ -160,9 +202,55 @@ String defaultTokenStoreDir({String appName = 'slaudio-mobile'}) {
 ///   [defaultTokenStoreDir]
 ///
 /// See [FileTokenStore] for why desktop deliberately avoids the keychain.
-TokenStore defaultTokenStore({String appName = 'slaudio-mobile'}) {
-  if (Platform.isAndroid || Platform.isIOS) {
-    return SecureStorageTokenStore();
+///
+/// [appName] only names the desktop directory. On Android/iOS every app
+/// environment shares the one secure store under the same `slauth_*` keys
+/// (dev and prod builds share an application id, and an iOS keychain outlives
+/// an uninstall), so a dev build installed over a prod one restores the prod
+/// session. [mobileNamespace] opts out of that: when set, the mobile store is
+/// wrapped in a [NamespacedTokenStore], so its keys become
+/// `<mobileNamespace>.slauth_*`. `null` (the default) keeps exactly the
+/// un-namespaced `slauth_*` keys, so a consumer that does not opt in is
+/// untouched. Opting in later starts that environment signed out once (the
+/// session sits under the old keys; nothing is migrated), so do it where
+/// no session was stored under the plain keys, or where a one-time sign-out
+/// is acceptable. Desktop ignores [mobileNamespace]: its directory is already
+/// per [appName].
+TokenStore defaultTokenStore({
+  String appName = 'slaudio-mobile',
+  String? mobileNamespace,
+}) => defaultTokenStoreFor(
+  mobile:
+      debugTokenStoreMobileOverride ?? (Platform.isAndroid || Platform.isIOS),
+  appName: appName,
+  mobileNamespace: mobileNamespace,
+);
+
+/// [defaultTokenStore]'s platform decision as a seam: [mobile] stands for
+/// "running on Android/iOS", [secureStore] builds the mobile backing store
+/// (default [SecureStorageTokenStore]) and [desktopDir] replaces
+/// [defaultTokenStoreDir]. Only tests pass the last two.
+@visibleForTesting
+TokenStore defaultTokenStoreFor({
+  required bool mobile,
+  required String appName,
+  String? mobileNamespace,
+  TokenStore Function()? secureStore,
+  String? desktopDir,
+}) {
+  if (mobileNamespace != null && mobileNamespace.isEmpty) {
+    // `''` would write `.slauth_*`: a typo, not a namespace.
+    throw ArgumentError.value(
+      mobileNamespace,
+      'mobileNamespace',
+      'must not be empty (use null for the un-namespaced keys)',
+    );
   }
-  return FileTokenStore(defaultTokenStoreDir(appName: appName));
+  if (mobile) {
+    final store = secureStore?.call() ?? SecureStorageTokenStore();
+    return mobileNamespace == null
+        ? store
+        : NamespacedTokenStore(store, namespace: mobileNamespace);
+  }
+  return FileTokenStore(desktopDir ?? defaultTokenStoreDir(appName: appName));
 }

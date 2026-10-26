@@ -18,7 +18,9 @@
 /// - [AuthEndpointException] — typed endpoint failures: [AuthUnauthorized]
 ///   (dead grant → logout) and [AuthUnavailable] (transient → keep session).
 /// - [TokenStore] and impls ([SecureStorageTokenStore], [FileTokenStore],
-///   [InMemoryTokenStore]) + [defaultTokenStore] / [defaultTokenStoreDir].
+///   [InMemoryTokenStore]) + [defaultTokenStore] (optional `mobileNamespace`) /
+///   [defaultTokenStoreDir]; [NamespacedTokenStore] keeps one environment's keys
+///   apart in a shared store.
 /// - [AuthService] — token lifecycle (exchange, refresh + rotation, persist,
 ///   logout) with the typed [RefreshOutcome] and the opt-in
 ///   [RefreshRetryPolicy].

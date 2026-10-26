@@ -22,6 +22,21 @@ today's behaviour apart from the items under "Changed" and "Security".
 - `WebAuthOptions` (+ `const WebAuthOptions.defaults`), passed through
   `FlutterWebAuth2Impl(options:)`.
 
+- `NamespacedTokenStore(inner, namespace:)`: a `TokenStore` that keeps every key under
+  `<namespace>.` in `inner`, the write-in-progress marker included. Moved here from the
+  byte copy lumen and tapper each kept.
+- `defaultTokenStore(mobileNamespace:)`: on Android/iOS, wraps the secure store in a
+  `NamespacedTokenStore`, so dev and prod builds sharing an application id (and an iOS
+  keychain that outlives an uninstall) no longer share one session. `null` (the default)
+  keeps exactly today's un-namespaced `slauth_*` keys, so nothing moves for a consumer
+  that does not opt in. Opting in starts that environment signed out once (nothing is
+  migrated); an empty string throws `ArgumentError`. Desktop ignores it (its directory is
+  already per `appName`).
+- **Upgrade note:** apps that still declare their own `NamespacedTokenStore` (lumen and
+  tapper kept a byte copy) must delete it, or `hide NamespacedTokenStore` on the
+  `package:stridelabs_slauth` import, when they bump: the unqualified name is otherwise
+  ambiguous.
+
 ### Changed
 - **Refresh-token rule.** On refresh, a missing `refresh_token` now KEEPS the stored
   token (it used to delete it), and `null`/`""` is an upstream error (unavailable,
