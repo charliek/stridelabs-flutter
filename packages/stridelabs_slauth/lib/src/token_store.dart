@@ -192,6 +192,10 @@ String defaultTokenStoreDir({String appName = 'slaudio-mobile'}) {
 /// branch, `false` the desktop one, `null` (the default) asks [Platform]. It lets
 /// a test on a desktop host exercise the PUBLIC [defaultTokenStore] (in
 /// particular its `mobileNamespace` forwarding). Reset it to `null` afterwards.
+///
+/// The check reads `dart:io`'s [Platform], not Flutter's
+/// `defaultTargetPlatform`, so `debugDefaultTargetPlatformOverride` does not
+/// reach it: a consumer test that fakes the platform sets this override too.
 @visibleForTesting
 bool? debugTokenStoreMobileOverride;
 
