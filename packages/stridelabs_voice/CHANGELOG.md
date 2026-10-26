@@ -10,6 +10,16 @@ Targets `PROTOCOL.md` revision 1 of the `stridelabs-voice` crate
 golden fixture SHA-256
 `0437bc8114b0397e3b9734e03c9cb3d72f18ba928f22a160e19fb68f6226ed15`).
 
+### Changed
+- `TtsAuth.refreshAfterUnauthorized(extras)`: the contract drops the clause
+  that let it answer true when "the held token is already newer than the one
+  the sentence carried". The extras are frozen at `request()`, before the
+  refresh ahead, and the app's interceptor attaches the token later, so they
+  cannot say which token an attempt carried (tapper's review). It now
+  refreshes the session the extras identify and answers true only if a
+  refresh succeeded (a concurrent refresh the implementation joined counts).
+  `SpeakerPorts.ttsAuth`'s doc: with null the speaker never refreshes.
+
 ### Added
 - The protocol: `RelayEvent` and its variants, `VoiceLimit`, the close codes,
   the constants and `clientLeadFor` / `allowedMediaType`.

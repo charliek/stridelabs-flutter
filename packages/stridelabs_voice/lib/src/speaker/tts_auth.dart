@@ -14,11 +14,15 @@ abstract interface class TtsAuth {
   /// has expired). Never throws.
   Future<bool> refreshAhead();
 
-  /// After a `401`, for the sentence whose request carried [extras]: true
-  /// only when a refresh SUCCEEDED (or the held token is already newer than
-  /// the one the sentence carried). Refreshes only the session the sentence
-  /// was sent under; starts no refresh while the app's own refresh retry is
-  /// pending (answers false). Single-flight with the app's other refreshes.
-  /// Never throws.
+  /// After a `401`, for the sentence whose request carried [extras]:
+  /// refreshes the session the [extras] identify, and answers true only if a
+  /// refresh succeeded (a concurrent refresh the implementation itself
+  /// joined counts), false otherwise. It never answers true on the strength
+  /// of the token it already holds: the [extras] are frozen when the
+  /// sentence is requested, before any refresh ahead, and the app attaches
+  /// the token later, so they cannot say which token the failed attempt
+  /// carried. Starts no refresh while the app's own refresh retry is pending
+  /// (answers false). Single-flight with the app's other refreshes. Never
+  /// throws.
   Future<bool> refreshAfterUnauthorized(Map<String, Object?> extras);
 }

@@ -899,8 +899,8 @@ void main() {
       }
     });
 
-    test('no TtsAuth is B-5\'s behaviour: no refresh ahead, a 401 gives the '
-        'sentence up', () {
+    test('with no TtsAuth the speaker never refreshes: no refresh ahead, a 401 '
+        'gives the sentence up', () {
       final lines = _captureDebugPrint();
       fakeAsync((async) {
         final s = _Speaker(async)..origins['t1'] = _Origin.voice;

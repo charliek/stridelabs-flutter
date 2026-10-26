@@ -131,7 +131,9 @@ class SpeakerPorts {
   /// audio session the capture needs, `ReplyAudioPlayer.release`).
   final bool Function() captureLive;
 
-  /// The token handling for TTS; null is B-5's behaviour: no refresh ahead,
-  /// and a `401` gives the sentence up.
+  /// The token handling for TTS. With null the speaker never refreshes: no
+  /// refresh ahead, and a `401` gives the sentence up. An app that exempts
+  /// TTS from its interceptor's replay (`kNoAuthReplayExtra`) should supply
+  /// a [TtsAuth], so a `401` still leads to a refresh.
   final TtsAuth? ttsAuth;
 }
