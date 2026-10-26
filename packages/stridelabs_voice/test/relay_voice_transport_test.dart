@@ -855,6 +855,82 @@ void main() {
       });
     });
 
+    test("a cut segment's end_of_turn arriving after the tail is not "
+        'posted: the cut decides, not the delivery time', () {
+      fakeAsync((async) {
+        final r = _Relay(async);
+        _micOn(r);
+        _ready(r);
+        r.server.channel.send(const RelaySpeechStart()); // no partial yet
+        async.flushMicrotasks();
+        r.speakerPlaying = true; // the cut: nothing to keep
+        async.flushMicrotasks();
+        r.speakerPlaying = false;
+        async.elapse(const Duration(seconds: 1)); // past the 500 ms tail
+        r.server.channel
+          ..send(const RelaySpeechEnd())
+          ..send(const RelayEndOfTurn('What time is it?'));
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 12)); // past every timer
+        expect(r.utterances, isEmpty);
+        expect(r.states, [_listening, _idle]);
+
+        // The segment is over: the next one is heard.
+        r.server.channel
+          ..send(const RelaySpeechStart())
+          ..send(const RelayEndOfTurn('Hello.'));
+        async.flushMicrotasks();
+        expect(r.texts, ['Hello.']);
+        _micOff(r);
+      });
+    });
+
+    test("a cut segment whose end_of_turn never comes: the next "
+        'speech_start is heard', () {
+      fakeAsync((async) {
+        final r = _Relay(async);
+        _micOn(r);
+        _ready(r);
+        r.server.channel.send(const RelaySpeechStart());
+        async.flushMicrotasks();
+        r.speakerPlaying = true;
+        r.speakerPlaying = false;
+        async.elapse(const Duration(seconds: 1));
+        r.server.channel
+          ..send(const RelaySpeechStart())
+          ..send(const RelayPartial('turn on'))
+          ..send(const RelayEndOfTurn('Turn on the lights.'));
+        async.flushMicrotasks();
+        expect(r.texts, ['Turn on the lights.']);
+        expect(r.speechStartTicks, 2);
+        _micOff(r);
+      });
+    });
+
+    test("a final-only turn the assembler flushed before the reply (no cut) "
+        'still posts its late end_of_turn after the tail', () {
+      fakeAsync((async) {
+        final r = _Relay(async);
+        _micOn(r);
+        _ready(r);
+        r.server.channel
+          ..send(const RelaySpeechStart())
+          ..send(const RelaySpeechEnd());
+        async.flushMicrotasks();
+        // The assembler's fallback flush closes the segment: no cut later.
+        async.elapse(const Duration(milliseconds: 1500));
+        expect(r.states, [_listening, _idle]);
+        r.speakerPlaying = true;
+        r.speakerPlaying = false;
+        async.elapse(const Duration(seconds: 1));
+        r.server.channel.send(const RelayEndOfTurn('What time is it?'));
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 12));
+        expect(r.texts, ['What time is it?']);
+        _micOff(r);
+      });
+    });
+
     test('a capture stall spanning a short reply: frames that arrive within '
         'the tail are silenced, whenever they were captured', () {
       fakeAsync((async) {

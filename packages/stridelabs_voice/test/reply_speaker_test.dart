@@ -1622,7 +1622,11 @@ void main() {
         expect(s.playingLog, [true, false]);
         expect(s.player.disposed, isTrue);
         expect(s.player.stopCount, 1);
-        expect(s.player.releases, [true], reason: 'stopped, then released');
+        expect(
+          s.player.releases,
+          [false],
+          reason: 'stopped, then released as the mic (off) allows',
+        );
         expect(s.files.files, isEmpty);
         // The replacement speaks.
         s.origins['t2'] = _Origin.voice;
@@ -1636,6 +1640,27 @@ void main() {
   });
 
   group('disposal (safe in a Riverpod onDispose)', () {
+    test('the capture state is read at disposal: a live mic keeps its '
+        'session, and one that cannot be read counts as live', () {
+      for (final (micOn, throws, released) in [
+        (true, false, true),
+        (false, true, true),
+      ]) {
+        fakeAsync((async) {
+          final s = _Speaker(async)..origins['t1'] = _Origin.voice;
+          s.speakOne('t1', 'One. Two.');
+          s.micOn = micOn;
+          s.captureThrows = throws;
+          s.speaker.dispose();
+          s.flush();
+          expect(s.player.releases, [
+            released,
+          ], reason: 'micOn=$micOn throws=$throws');
+          s.captureThrows = false; // the teardown's own speaker
+        });
+      }
+    });
+
     test('a playing listener that disposes the speaker as playback starts '
         'leaves no player, clip or timer behind', () {
       fakeAsync((async) {
@@ -2162,7 +2187,8 @@ class _Speaker {
         players.add(player);
         return player;
       },
-      captureLive: () => micOn,
+      captureLive: () =>
+          captureThrows ? throw StateError('read after disposal') : micOn,
       ttsAuth: auth,
     );
     speaker = build();
@@ -2193,6 +2219,9 @@ class _Speaker {
   String? active;
   bool interrupt = false;
   bool micOn = false;
+
+  /// [SpeakerPorts.captureLive] throws (a Riverpod ref read in onDispose).
+  bool captureThrows = false;
   String voice = 'Jason';
   bool prepareSilentPlayer = false;
   late final SpeakerPorts ports;

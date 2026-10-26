@@ -93,8 +93,10 @@ const _maxRateRetries = 2;
 /// a capture stall spanning a short reply is covered too — is replaced by
 /// silence of the same size (the stream stays alive: the relay closes one
 /// that stops sending), and no speech event reaches the assembler. A segment
-/// open when the mute begins is cut there (its partial is what was said),
-/// and one that STARTS during the mute is ignored to its `end_of_turn`.
+/// open when the mute begins is cut there (its partial is what was said)
+/// and the rest of it is ignored to its `end_of_turn` (or the next
+/// `speech_start`), even when that arrives after the mute; one that STARTS
+/// during the mute is ignored to its `end_of_turn` too.
 ///
 /// **Keep-alive:** if capture stalls with the socket open, silence fills the
 /// gap up to real time once it is [stallFill] behind (the relay closes a
@@ -488,6 +490,11 @@ class RelayVoiceTransport implements VoiceTransport {
     _mvoice('reply_playing');
     if (_interruptByVoice() || !_segmentOpen) return;
     _segmentOpen = false;
+    // The rest of the cut segment is not heard, however late it arrives:
+    // its end_of_turn after the tail would otherwise be a new utterance.
+    for (final session in [?_session, ?_ending]) {
+      session.suppressing = true;
+    }
     _assembler.flush();
     _endListening();
   }
@@ -673,7 +680,8 @@ class _RelaySession {
   /// joins it, and learns whether the recorder would stop.
   Future<_StopFailure?>? recapture;
 
-  /// A segment that started while the mic was silenced: ignored to its end.
+  /// A segment that started while the mic was silenced, or that a reply
+  /// cut: ignored to its `end_of_turn` (or the next `speech_start`).
   bool suppressing = false;
 
   /// The spent allowance the relay's `limit` event named, for the 4002

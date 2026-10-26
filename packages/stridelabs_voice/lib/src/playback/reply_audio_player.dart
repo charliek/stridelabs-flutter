@@ -97,7 +97,16 @@ final AudioSessionConfiguration replyAudioSessionConfiguration =
 ///
 /// Every operation (enqueue, stop, the end-of-playlist handling) runs in
 /// order on one chain, so a clip appended just as the playlist ended is
-/// played rather than stranded.
+/// played rather than stranded. [stop] and [dispose] do not queue behind
+/// it: they stop (or dispose) the just_audio player at once, which cuts a
+/// load or an append still pending; the clips enqueued before them are
+/// dropped unplayed; and what comes after them waits at most
+/// [interruptWait] for the operation that was in flight (one that never
+/// completes holds up no later reply, release or disposal). A player that
+/// does not finish that operation, or its stop, within [interruptWait] is
+/// abandoned — disposed without waiting, its events no longer heard — and
+/// the next reply gets a new one: just_audio's append holds the playlist's
+/// lock, which the next reply's load needs, for as long as it is stuck.
 ///
 /// Linux has no audio session (audio_session has no implementation there):
 /// the default session steps are skipped and activation always succeeds.
@@ -135,6 +144,7 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
     bool? startNeedsProgress,
     DateTime Function()? now,
     this.systemPauseGrace = const Duration(seconds: 5),
+    this.interruptWait = const Duration(seconds: 2),
   }) : _now = now ?? DateTime.now,
        startNeedsProgress =
            startNeedsProgress ?? defaultTargetPlatform == TargetPlatform.linux,
@@ -171,6 +181,12 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
 
   final Duration systemPauseGrace;
 
+  /// The longest [stop] and [dispose] wait for the operation in flight when
+  /// they were called (a load or an append the player never finishes), and
+  /// a stop for the player to stop, before what follows them goes ahead
+  /// without it (on a new player).
+  final Duration interruptWait;
+
   /// A clip has started only once its position moved past zero while
   /// playing (Linux's media_kit: see the class docs), not merely at its
   /// playing state.
@@ -193,6 +209,23 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
   AudioPlayer? _player;
   Future<void> _chain = Future<void>.value();
   bool _disposed = false;
+
+  /// Bumped by [stop] and [dispose]: an enqueue from before (queued, or in
+  /// flight across an await) that sees another value does nothing more.
+  int _epoch = 0;
+
+  /// The `captureLive` of the last [release] since the last run started
+  /// (null: none yet): what a focus taken too late, for a run already
+  /// stopped, is given back by.
+  bool? _releasedCaptureLive;
+
+  /// Bumped as each run starts: a callback or continuation of an older run
+  /// (a late `play()` failure, a late focus) leaves the newer one alone.
+  int _run = 0;
+
+  /// A late focus being given back (see [_giveBackLate]): the next run
+  /// takes the session only after it.
+  Future<void>? _lateGiveBack;
 
   /// The playlist loaded now, by path (playlist index = list index); empty
   /// once it finished, failed or was stopped.
@@ -218,77 +251,159 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
   Stream<ReplyClipEvent> get clipEvents => _events.stream;
 
   @override
-  Future<void> enqueue(String path, {required String mediaType}) =>
-      _serial(() async {
-        if (_disposed) return;
-        if (!kAllowedAudioTypes.containsKey(mediaType)) {
-          throw UnsupportedError('reply audio of type $mediaType');
+  Future<void> enqueue(String path, {required String mediaType}) {
+    final epoch = _epoch;
+    // Stopped (or disposed) since it was asked for.
+    bool stale() => _disposed || epoch != _epoch;
+    return _serial(() async {
+      if (stale()) return;
+      if (!kAllowedAudioTypes.containsKey(mediaType)) {
+        throw UnsupportedError('reply audio of type $mediaType');
+      }
+      final player = await _ensurePlayer();
+      if (player == null || stale()) return;
+      final source = AudioSource.file(path);
+      if (!_running) {
+        final run = ++_run;
+        _releasedCaptureLive = null;
+        _playlist
+          ..clear()
+          ..add(path);
+        _sources
+          ..clear()
+          ..add(source);
+        _current = 0;
+        _startedAt = null;
+        _awaitingStart = true;
+        try {
+          await player.setAudioSources([source]);
+        } catch (_) {
+          // A stop cut the load: nothing to report, nothing of a newer
+          // run to reset.
+          if (stale()) return;
+          _resetRun();
+          rethrow;
         }
-        final player = await _ensurePlayer();
-        final source = AudioSource.file(path);
-        if (!_running) {
-          _playlist
-            ..clear()
-            ..add(path);
-          _sources
-            ..clear()
-            ..add(source);
-          _current = 0;
-          _startedAt = null;
-          _awaitingStart = true;
-          try {
-            await player.setAudioSources([source]);
-          } catch (_) {
-            _resetRun();
-            rethrow;
+        if (stale()) return;
+        // An older run's late focus is given back first, so it cannot
+        // revoke this run's.
+        final lateGiveBack = _lateGiveBack;
+        if (lateGiveBack != null) {
+          await lateGiveBack.timeout(interruptWait, onTimeout: () {});
+          if (stale()) return;
+        }
+        final granted = await _activateSession();
+        if (stale()) {
+          // Taken for a run stopped meanwhile, and no run holds the session
+          // now (a newer one playing, or one that kept it for a live
+          // capture): given back as the release since asked (or one still
+          // to come).
+          if (granted && !_running && !_sessionActive) {
+            final giving = _giveBackLate();
+            _lateGiveBack = giving;
+            await giving;
+            if (identical(_lateGiveBack, giving)) _lateGiveBack = null;
           }
-          if (!await _activateSession()) {
-            // just_audio's play() would silently do nothing.
-            debugPrint('[speaker] audio focus refused');
+          return;
+        }
+        if (granted) _sessionActive = true;
+        if (!granted) {
+          // just_audio's play() would silently do nothing.
+          debugPrint('[speaker] audio focus refused');
+          _failRun();
+          return;
+        }
+        // Completes only when playback pauses or ends: never awaited here.
+        unawaited(
+          player.play().catchError((Object error) {
+            // Only this run's, on this player (not an abandoned one's).
+            if (run != _run || !identical(player, _player)) return;
+            debugPrint('[speaker] play failed: ${error.runtimeType}');
             _failRun();
-            return;
-          }
-          _sessionActive = true;
-          // Completes only when playback pauses or ends: never awaited here.
-          unawaited(
-            player.play().catchError((Object error) {
-              debugPrint('[speaker] play failed: ${error.runtimeType}');
-              _failRun();
-            }),
-          );
-        } else {
-          _playlist.add(path);
-          _sources.add(source);
+          }),
+        );
+      } else {
+        _playlist.add(path);
+        _sources.add(source);
+        try {
           await player.addAudioSource(source);
+        } catch (_) {
+          if (stale()) return; // a stop cut the append
+          rethrow;
         }
-      });
+      }
+    });
+  }
 
+  /// Stops the player at once, not behind an operation still pending (a
+  /// load or an append, which just_audio's stop cuts); completes once it
+  /// stopped and the operation in flight before it ended, each within
+  /// [interruptWait] (else the player is abandoned).
   @override
-  Future<void> stop() => _serial(() async {
+  Future<void> stop() {
     final player = _player;
-    _resetRun();
-    if (player == null) return;
-    await player.stop();
-  });
+    _interrupt();
+    if (player == null) return _serial(() async {});
+    final stopped = _stopPlayer(player);
+    return _serial(() => stopped);
+  }
 
   @override
   Future<void> release({required bool captureLive}) => _serial(() async {
-    if (_disposed || _running || !_sessionActive) return;
-    if (captureLive && !_releaseKeepsCapture) return;
-    if (await _deactivateSession()) _sessionActive = false;
+    if (_disposed || _running) return;
+    _releasedCaptureLive = captureLive;
+    await _giveBack();
   });
 
+  /// Stops listening to the player and disposes it at once (cutting a load
+  /// or an append still pending), then waits at most [interruptWait] for
+  /// the operation in flight, and for the player's own disposal.
   @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _resetRun();
+    _interrupt();
+    final player = _player;
+    _player = null;
+    // Ours first, while the player's streams are still open.
+    final cancels = [for (final sub in _subscriptions) sub.cancel()];
+    _subscriptions.clear();
+    final disposing = player == null
+        ? null
+        : _disposePlayer(player).timeout(
+            interruptWait,
+            onTimeout: () => debugPrint(
+              '[speaker] the player\'s disposal still pending after '
+              '${interruptWait.inMilliseconds}ms; going on without it',
+            ),
+          );
     await _chain;
-    for (final sub in _subscriptions) {
-      await sub.cancel();
-    }
-    await _player?.dispose();
+    await Future.wait(cancels);
+    await disposing;
     await _events.close();
+  }
+
+  /// A focus granted after its run was stopped, given back as the last
+  /// [release] said (kept for the release still to come when none has). A
+  /// run that starts meanwhile owns the session from then (it waits for
+  /// this before activating it): [_sessionActive] is left to it.
+  Future<void> _giveBackLate() async {
+    final run = _run;
+    _sessionActive = true;
+    final captureLive = _releasedCaptureLive;
+    if (captureLive == null) return;
+    if (captureLive && !_releaseKeepsCapture) return;
+    final released = await _deactivateSession();
+    if (run != _run) return;
+    if (released) _sessionActive = false;
+  }
+
+  /// Gives the focus back as the last [release] said, if it is held.
+  Future<void> _giveBack() async {
+    final captureLive = _releasedCaptureLive;
+    if (captureLive == null || !_sessionActive) return;
+    if (captureLive && !_releaseKeepsCapture) return;
+    if (await _deactivateSession()) _sessionActive = false;
   }
 
   Future<void> _serial(Future<void> Function() op) {
@@ -297,23 +412,102 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
     return next;
   }
 
-  Future<AudioPlayer> _ensurePlayer() async {
+  /// [stop] or [dispose]: the run is over, every enqueue from before it is
+  /// stale, and the chain goes on once the operation in flight ends, or
+  /// after [interruptWait] without it — and without the player it may be
+  /// stuck in.
+  void _interrupt() {
+    _epoch++;
+    _resetRun();
+    final player = _player;
+    _chain = _chain.timeout(
+      interruptWait,
+      onTimeout: () {
+        if (player != null) {
+          _abandon(
+            player,
+            'an operation still pending after '
+            '${interruptWait.inMilliseconds}ms',
+          );
+        }
+      },
+    );
+  }
+
+  /// [player] stopped, or abandoned when that takes over [interruptWait].
+  Future<void> _stopPlayer(AudioPlayer player) => player.stop().timeout(
+    interruptWait,
+    onTimeout: () => _abandon(
+      player,
+      'stopping the player took over ${interruptWait.inMilliseconds}ms',
+    ),
+  );
+
+  /// [player] is stuck ([why]): no longer heard, disposed without waiting,
+  /// and the next reply builds a new one. A no-op once it is not the
+  /// current player (already abandoned, or disposed).
+  ///
+  /// On Linux (media_kit) this may not silence it: a stalled append holds
+  /// media_kit's own player lock, which its disposal (and stop) waits for,
+  /// so its audio can overlap the next reply until the native call
+  /// returns. An accepted residual: it needs a native call that hangs, and
+  /// without the abandonment that hang would block every later reply.
+  void _abandon(AudioPlayer player, String why) {
+    if (!identical(_player, player)) return;
+    debugPrint('[speaker] $why; abandoning the player');
+    _player = null;
+    for (final sub in _subscriptions) {
+      unawaited(sub.cancel());
+    }
+    _subscriptions.clear();
+    unawaited(_disposePlayer(player));
+  }
+
+  static Future<void> _disposePlayer(AudioPlayer player) =>
+      player.dispose().catchError((Object error) {
+        debugPrint(
+          '[speaker] disposing the player failed: '
+          '${error.runtimeType}',
+        );
+      });
+
+  /// The player, built (after configuring the session) on first use; null
+  /// when the wrapper was disposed while the session was being configured,
+  /// so no player is built for nobody to dispose.
+  Future<AudioPlayer?> _ensurePlayer() async {
     final existing = _player;
     if (existing != null) return existing;
     await _configureSession();
+    if (_disposed) return null;
+    // A newer reply built one while this configuration was stuck.
+    final built = _player;
+    if (built != null) return built;
     final player = _createPlayer();
+    // Only while it is the current player (not one abandoned or disposed).
+    bool current() => identical(player, _player);
     _subscriptions
-      ..add(player.currentIndexStream.listen(_onIndex))
-      ..add(player.playerStateStream.listen(_onState))
+      ..add(
+        player.currentIndexStream.listen((index) {
+          if (current()) _onIndex(index);
+        }),
+      )
+      ..add(
+        player.playerStateStream.listen((state) {
+          if (current()) _onState(player, state);
+        }),
+      )
       ..add(
         player.playbackEventStream.listen(
-          _onPlaybackEvent,
+          (event) {
+            if (current()) _onPlaybackEvent(event);
+          },
           // Failures are the error stream's (below).
           onError: (Object _) {},
         ),
       )
       ..add(
         player.errorStream.listen((error) {
+          if (!current()) return;
           debugPrint('[speaker] playback error ${error.code}');
           _failRun();
         }),
@@ -385,7 +579,7 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
     _nextDue();
   }
 
-  void _onState(PlayerState state) {
+  void _onState(AudioPlayer player, PlayerState state) {
     if (!_running) return;
     if (state.playing && state.processingState == ProcessingState.ready) {
       _resumeTimer?.cancel();
@@ -398,13 +592,13 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
     if (state.processingState == ProcessingState.completed) {
       // Re-checked in order: a stale completion of an earlier playlist
       // finds the player loaded again and does nothing.
-      unawaited(_serial(_onCompleted));
+      unawaited(_serial(() => _onCompleted(player)));
     } else if (!state.playing) {
       // Not our pause (that ends the run first): not started yet, or an
       // interruption.
       _resumeTimer ??= Timer(systemPauseGrace, () {
         _resumeTimer = null;
-        if (!_running) return;
+        if (!_running || !identical(player, _player)) return;
         debugPrint('[speaker] playback is not playing; giving up');
         _failRun();
       });
@@ -428,9 +622,8 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
   /// The playlist reached its end. A clip appended just too late is played
   /// on; otherwise the run is over (paused, so the next run's `play()`
   /// takes the audio session again).
-  Future<void> _onCompleted() async {
-    final player = _player;
-    if (player == null || !_running) return;
+  Future<void> _onCompleted(AudioPlayer player) async {
+    if (!identical(player, _player) || !_running) return;
     if (player.processingState != ProcessingState.completed) return;
     final last = player.currentIndex ?? _current;
     for (var k = _current; k <= last; k++) {
@@ -455,6 +648,6 @@ class JustAudioReplyPlayer implements ReplyAudioPlayer {
       _emit(path, ReplyClipPhase.failed);
     }
     final player = _player;
-    if (player != null) unawaited(_serial(player.stop));
+    if (player != null) unawaited(_serial(() => _stopPlayer(player)));
   }
 }

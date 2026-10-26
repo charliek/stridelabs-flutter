@@ -83,3 +83,14 @@ The package declares no manifest entries; the app does.
   (this package depends on `just_audio` only).
 - **Web:** no microphone (the relay channel and clip files are stubs).
 - **iOS:** untried.
+
+## Known limits
+
+- **A stuck native player call (Linux).** When a reply's load, append or stop
+  does not return within `JustAudioReplyPlayer.interruptWait` (2 s) after a
+  stop, the player is abandoned (disposed without waiting) and the next reply
+  plays on a new one. On Linux, media_kit's stalled append holds its own
+  player lock, which its disposal and stop wait for, so the abandoned
+  player's audio may overlap the next reply until the native call returns.
+  This needs a native call that hangs; without the abandonment, that hang
+  would block every later reply.

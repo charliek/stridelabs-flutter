@@ -291,8 +291,9 @@ class ReplySpeaker {
   }
 
   /// Stops listening (the ports' streams, the lifecycle) and every timer,
-  /// and lets the player go (stopped, released keeping a live capture's
-  /// session, disposed) and the clip files with it.
+  /// and lets the player go (stopped, released as far as the mic's capture,
+  /// read now, allows — [SpeakerPorts.captureLive] — disposed) and the clip
+  /// files with it.
   ///
   /// Safe in a Riverpod `onDispose`, and in a [playing] listener: nothing is
   /// notified synchronously. ONE microtask later [playing] turns false, when
@@ -331,16 +332,35 @@ class ReplySpeaker {
     if (player == null) {
       _deleteAll(leftover);
     } else {
-      // Stopped first, so the focus can go back; whether the mic is live is
-      // not asked here, so a live capture's session is kept.
+      // Read now, while the ports are still the app's: the micOff
+      // subscription that would give the focus back later is gone.
+      final captureLive = _captureLiveAtDisposal();
+      // Stopped first, so the focus can go back.
       Future<void> quietly(Future<void> Function() step) =>
           step().catchError((Object _) {});
       unawaited(
         quietly(player.stop)
-            .then((_) => quietly(() => player.release(captureLive: true)))
+            .then(
+              (_) => quietly(() => player.release(captureLive: captureLive)),
+            )
             .then((_) => quietly(player.dispose))
             .whenComplete(() => _deleteAll(leftover)),
       );
+    }
+  }
+
+  /// [SpeakerPorts.captureLive] at disposal, which may run in a Riverpod
+  /// `onDispose`: if reading it fails there, the capture counts as live (its
+  /// session is kept, as for a live mic).
+  bool _captureLiveAtDisposal() {
+    try {
+      return _ports.captureLive();
+    } catch (error) {
+      debugPrint(
+        '[speaker] reading the capture state at disposal failed: '
+        '${error.runtimeType}',
+      );
+      return true;
     }
   }
 
