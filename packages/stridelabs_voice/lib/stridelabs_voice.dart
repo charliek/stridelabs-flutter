@@ -15,14 +15,23 @@
 ///   [RelayChannel] / [RelayConnector] / [connectRelay] (`dart:io`; a stub
 ///   on web) and [relayStreamUri]; the [MicCapture] port and
 ///   [RecordMicCapture] with its [captureConfig].
-/// - The turn assembly the transport runs: [TurnAssembler], [VoiceUtterance]
-///   and the default end-word policy [isUnfinishedFragment].
+/// - The turn assembly the transport runs: [TurnAssembler] (its merge
+///   window and end-word policy injectable), [VoiceUtterance] and the
+///   default policy [isUnfinishedFragment]; the reply's [SentenceAssembler],
+///   split to its [SentenceAssembler.maxSpokenChunk].
+/// - Playback: the [ReplyAudioPlayer] port and [JustAudioReplyPlayer] with
+///   its [ReplyClipEvent]s and [replyAudioSessionConfiguration]; the
+///   [ReplyClipFiles] store ([defaultReplyClipFiles], its file prefix the
+///   app's, its extension from the clip's media type).
 /// - Debug lines: [VoiceDebugSink], [defaultVoiceDebugSink] and the pinned
 ///   `MVOICE` vocabulary [kMvoiceEvents].
 library;
 
+export 'src/assembly/sentence_assembler.dart';
 export 'src/assembly/turn_assembler.dart';
 export 'src/debug/voice_debug.dart';
+export 'src/playback/reply_audio_player.dart';
+export 'src/playback/reply_clip_files.dart';
 export 'src/protocol/close_codes.dart';
 export 'src/protocol/constants.dart';
 export 'src/protocol/relay_events.dart';
@@ -32,5 +41,5 @@ export 'src/transport/relay_channel.dart';
 export 'src/transport/relay_voice_transport.dart';
 export 'src/transport/voice_transport.dart';
 
-// Later units add the sentence assembler, the reply speaker and its TTS
-// client, the player and clip files here; the fakes go in `testing.dart`.
+// Later units add the reply speaker and its TTS client here; the fakes go in
+// `testing.dart`.
