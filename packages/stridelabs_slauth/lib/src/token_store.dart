@@ -218,8 +218,10 @@ bool? debugTokenStoreMobileOverride;
 /// untouched. Opting in later starts that environment signed out once (the
 /// session sits under the old keys; nothing is migrated), so do it where
 /// no session was stored under the plain keys, or where a one-time sign-out
-/// is acceptable. Desktop ignores [mobileNamespace]: its directory is already
-/// per [appName].
+/// is acceptable. Desktop ignores [mobileNamespace]: its directory comes from
+/// [appName], so environments are separate on desktop only when each has its
+/// own [appName]. An app whose environments share one desktop [appName] keeps
+/// its own wrapper that namespaces desktop too.
 TokenStore defaultTokenStore({
   String appName = 'slaudio-mobile',
   String? mobileNamespace,

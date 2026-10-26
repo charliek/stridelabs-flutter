@@ -30,12 +30,14 @@ today's behaviour apart from the items under "Changed" and "Security".
   keychain that outlives an uninstall) no longer share one session. `null` (the default)
   keeps exactly today's un-namespaced `slauth_*` keys, so nothing moves for a consumer
   that does not opt in. Opting in starts that environment signed out once (nothing is
-  migrated); an empty string throws `ArgumentError`. Desktop ignores it (its directory is
-  already per `appName`).
+  migrated); an empty string throws `ArgumentError`. Desktop ignores it: its directory comes from `appName`, so this
+  separates environments on desktop only when each has its own `appName`. An app whose
+  environments share one desktop `appName` keeps its own wrapper that namespaces desktop
+  too (as tapper does).
 - **Upgrade note:** apps that still declare their own `NamespacedTokenStore` (lumen and
-  tapper kept a byte copy) must delete it, or `hide NamespacedTokenStore` on the
-  `package:stridelabs_slauth` import, when they bump: the unqualified name is otherwise
-  ambiguous.
+  tapper kept a byte copy) must delete it when they bump. A bump alone still compiles `lib/` (the local
+  class shadows the package's), but any library importing both is ambiguous, tests
+  typically included.
 - `LoopbackWebAuth`, an opt-in desktop `WebAuth` (moved from lumen's Linux client): the
   user's default browser (`url_launcher`) and a loopback redirect (RFC 8252,
   `http://127.0.0.1:<port>/<path>`) on an `HttpServer` it owns. It accepts exactly one
@@ -54,7 +56,7 @@ today's behaviour apart from the items under "Changed" and "Security".
   - New dependency: `url_launcher: ^6.3.2` (already a direct dependency of every other
     consumer).
   - **Upgrade note:** lumen declares these names itself; it deletes its copy when it
-    bumps (or hides the names on the import).
+    bumps.
 
 ### Changed
 - `FlutterWebAuth2Impl`'s doc no longer says "a webview on Linux/Windows" without

@@ -301,7 +301,9 @@ id) restores the prod session. `defaultTokenStore(appName:, mobileNamespace:)`
 opts out: with `mobileNamespace: 'myapp-dev'` the mobile keys become
 `myapp-dev.slauth_*`. The default (`null`) keeps today's plain `slauth_*` keys,
 so an app that already has sessions in the field is untouched; opting in later
-signs that environment out once, as nothing is migrated. Desktop ignores it.
+signs that environment out once, as nothing is migrated. Desktop ignores it: its
+directory comes from `appName`, so an app whose environments share one desktop
+`appName` keeps its own wrapper that namespaces desktop too.
 
 `restoreFromStorage()` (app start) only ever fills an empty in-memory session.
 If a session is already in memory (a sign-in that finished first, or an earlier
