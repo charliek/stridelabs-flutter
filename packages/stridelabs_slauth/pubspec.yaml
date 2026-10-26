@@ -20,6 +20,8 @@ dependencies:
 
   # OAuth2 system-browser flow (custom-scheme redirect back into the app).
   flutter_web_auth_2: ^5.0.2
+  # LoopbackWebAuth's default launcher: the user's default browser (desktop).
+  url_launcher: ^6.3.2
 
   # Access/refresh/id token at rest on mobile (keychain/keystore).
   flutter_secure_storage: ^10.3.1

@@ -36,8 +36,31 @@ today's behaviour apart from the items under "Changed" and "Security".
   tapper kept a byte copy) must delete it, or `hide NamespacedTokenStore` on the
   `package:stridelabs_slauth` import, when they bump: the unqualified name is otherwise
   ambiguous.
+- `LoopbackWebAuth`, an opt-in desktop `WebAuth` (moved from lumen's Linux client): the
+  user's default browser (`url_launcher`) and a loopback redirect (RFC 8252,
+  `http://127.0.0.1:<port>/<path>`) on an `HttpServer` it owns. It accepts exactly one
+  `GET` for the redirect's path with exactly one matching `state`, builds the result
+  from the configured redirect (never request headers), answers anything else 404 and
+  keeps listening, runs one attempt at a time, releases the port on every outcome, and
+  registers no lifecycle observer. `FlutterWebAuth2Impl` is unchanged and nothing
+  selects the new class for an app.
+  - `InteractiveWebAuth` (`cancel()`, `reopen()`); typed failures `LoopbackAuthFailure`:
+    `LoopbackPortBusy`, `LoopbackNoBrowser`, `LoopbackTimeout`.
+  - Seams `BrowserLauncher` (default `launchInDefaultBrowser`), `BrowserCheck`,
+    `DeadlineTimerFactory`; `linuxDefaultBrowserCheck` (`gio mime`/`xdg-mime`, bounded)
+    is the default check with the default launcher on Linux.
+  - `defaultLandingPageHtml`, a neutral landing page; `landingPageHtml:` takes the
+    app's own.
+  - New dependency: `url_launcher: ^6.3.2` (already a direct dependency of every other
+    consumer).
+  - **Upgrade note:** lumen declares these names itself; it deletes its copy when it
+    bumps (or hides the names on the import).
 
 ### Changed
+- `FlutterWebAuth2Impl`'s doc no longer says "a webview on Linux/Windows" without
+  qualification: it describes the plugin's two desktop modes (its own webview window by
+  default; with `useWebview: false`, the default browser and a loopback server that
+  cancels on refocus) and points to `LoopbackWebAuth`. Behaviour unchanged.
 - **Refresh-token rule.** On refresh, a missing `refresh_token` now KEEPS the stored
   token (it used to delete it), and `null`/`""` is an upstream error (unavailable,
   nothing adopted). On exchange/`storeTokens`, a missing one gives a session with no
