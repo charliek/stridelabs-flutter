@@ -19,6 +19,16 @@
 ///   window and end-word policy injectable), [VoiceUtterance] and the
 ///   default policy [isUnfinishedFragment]; the reply's [SentenceAssembler],
 ///   split to its [SentenceAssembler.maxSpokenChunk].
+/// - The reply speaker: [ReplySpeaker] over its [SpeakerPorts] (the app's
+///   [SpeakerTurnEvent]s, [SpeechModeChange]s and seams), with its
+///   [SpeakerStopReason]s, its `playing` flag and its limit notices; and
+///   [splitSpokenChunk], the splitter a sentence over the text bound is cut
+///   with.
+/// - Its TTS client: the [ReplyTts] port ([ReplyTtsRequest], [ReplyClip],
+///   [UnsupportedAudioType]) and [RelayTtsClient] on an app's Dio (with
+///   [kNoAuthReplayExtra]); the optional [TtsAuth] port; and the transport
+///   rule, [ResponseHeadersWatch] with [responseHead], [clearResponseHead]
+///   and [isTransportFailure].
 /// - Playback: the [ReplyAudioPlayer] port and [JustAudioReplyPlayer] with
 ///   its [ReplyClipEvent]s and [replyAudioSessionConfiguration]; the
 ///   [ReplyClipFiles] store ([defaultReplyClipFiles], its file prefix the
@@ -30,16 +40,21 @@ library;
 export 'src/assembly/sentence_assembler.dart';
 export 'src/assembly/turn_assembler.dart';
 export 'src/debug/voice_debug.dart';
+export 'src/http/transport_failure.dart';
 export 'src/playback/reply_audio_player.dart';
 export 'src/playback/reply_clip_files.dart';
 export 'src/protocol/close_codes.dart';
 export 'src/protocol/constants.dart';
 export 'src/protocol/relay_events.dart';
 export 'src/protocol/voice_limit.dart';
+export 'src/speaker/relay_tts_client.dart';
+export 'src/speaker/reply_speaker.dart';
+export 'src/speaker/reply_tts.dart';
+export 'src/speaker/speaker_ports.dart';
+export 'src/speaker/tts_auth.dart';
 export 'src/transport/mic_capture.dart';
 export 'src/transport/relay_channel.dart';
 export 'src/transport/relay_voice_transport.dart';
 export 'src/transport/voice_transport.dart';
 
-// Later units add the reply speaker and its TTS client here; the fakes go in
-// `testing.dart`.
+// The fakes go in `testing.dart` (a later unit).

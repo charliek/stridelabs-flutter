@@ -368,6 +368,32 @@ void main() {
       expect(_streamByChar(long, assembler: a), [long]);
     });
 
+    test('splitSpokenChunk is the split the assembler makes, public', () {
+      for (final bound in [100, 600, 999]) {
+        expect(
+          splitSpokenChunk(long, bound),
+          SentenceAssembler(maxSpokenChunk: bound).assistantFinal(long),
+          reason: '$bound',
+        );
+      }
+      expect(splitSpokenChunk(long, 1000), [long], reason: 'within it');
+      expect(splitSpokenChunk('', 600), isEmpty);
+      expect(
+        () => splitSpokenChunk(long, 0),
+        throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'maxChars')),
+      );
+    });
+
+    test('splitSpokenChunk never cuts a surrogate pair, even under a bound '
+        'of 1', () {
+      // Two emoji (two code units each) with no space: hard cuts only.
+      expect(splitSpokenChunk('\u{1F600}\u{1F601}', 1), [
+        '\u{1F600}',
+        '\u{1F601}',
+      ]);
+      expect(splitSpokenChunk('a\u{1F600}b', 2), ['a', '\u{1F600}', 'b']);
+    });
+
     test('a bound under 1 is refused, by the constructor and the setter', () {
       expect(
         () => SentenceAssembler(maxSpokenChunk: 0),

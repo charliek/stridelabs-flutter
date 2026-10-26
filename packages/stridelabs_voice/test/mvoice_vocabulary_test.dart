@@ -40,10 +40,21 @@ void main() {
       final written = RegExp("'MVOICE ").allMatches(source).length;
       expect(written, direct, reason: '${file.path} writes MVOICE directly');
     }
-    // The transport's own events, at least: the scan is not vacuous.
+    // The transport's and the speaker's own events, at least: the scan is
+    // not vacuous.
     expect(
       events.keys,
       containsAll(['mic_on', 'ready', 'rate_retry', 'ready_refused']),
+    );
+    expect(
+      events.keys,
+      containsAll([
+        'speak_tts_request',
+        'speak_tts_retry',
+        'speak_tts_auth',
+        'speak_tts_unsupported_type',
+        'speak_playback_failed',
+      ]),
     );
     for (final MapEntry(key: event, value: path) in events.entries) {
       expect(kMvoiceEvents, contains(event), reason: '$path: $event');

@@ -62,10 +62,8 @@ class SentenceAssembler {
   int get maxSpokenChunk => _maxSpokenChunk;
   set maxSpokenChunk(int value) => _maxSpokenChunk = _checkBound(value);
 
-  static int _checkBound(int value) {
-    if (value < 1) {
-      throw ArgumentError.value(value, 'maxSpokenChunk', 'must be positive');
-    }
+  static int _checkBound(int value, [String name = 'maxSpokenChunk']) {
+    if (value < 1) throw ArgumentError.value(value, name, 'must be positive');
     return value;
   }
 
@@ -271,7 +269,7 @@ class SentenceAssembler {
       atLineStart: _onlySpaceBefore(text, start),
     );
     if (!_speakable.hasMatch(cleaned)) return;
-    out.addAll(_splitLong(cleaned, maxSpokenChunk));
+    out.addAll(splitSpokenChunk(cleaned, maxSpokenChunk));
   }
 }
 
@@ -345,12 +343,20 @@ String _clean(String raw, {required bool atLineStart}) {
   return s.replaceAll(_whitespace, ' ').trim();
 }
 
-/// [text] in pieces of at most [max], cut at the last clause boundary (`,;:`
-/// then a space) in the back two-thirds of the window, else at the last
-/// space, else hard (never inside a surrogate pair).
-List<String> _splitLong(String text, int max) {
+/// [chunk] (one spoken chunk) in pieces of at most [maxChars] UTF-16 code
+/// units, as [SentenceAssembler] splits a long one: cut at the last clause
+/// boundary (`,;:` then a space) in the back two-thirds of the window, else
+/// at the last space, else hard — never inside a surrogate pair, so a pair
+/// alone over a bound of 1 is a piece of 2. The pieces are trimmed; a chunk
+/// already within the bound comes back as it is (an empty one as none).
+///
+/// The reply speaker splits a sentence queued under a larger bound again
+/// with it, once a TTS response advertises a smaller one (`PROTOCOL.md`
+/// §5.3). [maxChars] must be positive.
+List<String> splitSpokenChunk(String chunk, int maxChars) {
+  final max = SentenceAssembler._checkBound(maxChars, 'maxChars');
   final out = <String>[];
-  var rest = text;
+  var rest = chunk;
   while (rest.length > max) {
     var cut = -1;
     for (var k = max - 1; k >= max ~/ 3; k--) {
@@ -365,7 +371,7 @@ List<String> _splitLong(String text, int max) {
     if (cut <= 0) {
       cut = max;
       final unit = rest.codeUnitAt(cut - 1);
-      if (unit >= 0xD800 && unit <= 0xDBFF) cut--;
+      if (unit >= 0xD800 && unit <= 0xDBFF) cut = cut > 1 ? cut - 1 : cut + 1;
     }
     final piece = rest.substring(0, cut).trim();
     if (piece.isNotEmpty) out.add(piece);

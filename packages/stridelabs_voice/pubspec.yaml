@@ -1,14 +1,12 @@
 name: stridelabs_voice
-description: "The client side of the StrideLabs voice protocol: the relay transport (microphone to `GET /voice/stream`), its events, limits and close codes, and the debug-line vocabulary."
+description: "The client side of the StrideLabs voice protocol: the relay transport (microphone to `GET /voice/stream`), its events, limits and close codes, the reply speaker and its TTS client (`POST /voice/tts`), and the debug-line vocabulary."
 version: 0.1.0
 publish_to: 'none'
 
 environment:
   sdk: ^3.12.2
 
-# Extraction-ready: this package imports nothing from a host app. The relay
-# transport's and the reply player's dependencies; the reply speaker's (dio)
-# come with it.
+# Extraction-ready: this package imports nothing from a host app.
 dependencies:
   flutter:
     sdk: flutter
@@ -16,11 +14,14 @@ dependencies:
   # The reply player's audio session: speech on the media stream, transient
   # focus, recordable on iOS/macOS.
   audio_session: ^0.2.4
+  # The TTS client (`POST /voice/tts`) runs on the app's Dio, its auth
+  # interceptor included.
+  dio: ^5.7.0
   # The reply player (media_kit's registration is the app's).
   just_audio: ^0.10.5
   # The microphone: PCM16 mono with the platform's voice processing.
   record: ^7.1.2
-  # The reply clip files' unique names.
+  # The reply clip files' unique names, and each sentence's Idempotency-Key.
   uuid: ^4.5.1
   # The relay's WebSocket (dart:io; a stub on web).
   web_socket_channel: ^3.0.3
