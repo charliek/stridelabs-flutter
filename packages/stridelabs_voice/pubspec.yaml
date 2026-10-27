@@ -1,0 +1,39 @@
+name: stridelabs_voice
+description: "The client side of the StrideLabs voice protocol: the relay transport (microphone to `GET /voice/stream`), its events, limits and close codes, the reply speaker and its TTS client (`POST /voice/tts`), and the debug-line vocabulary."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.2
+
+# Extraction-ready: this package imports nothing from a host app.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The reply player's audio session: speech on the media stream, transient
+  # focus, recordable on iOS/macOS.
+  audio_session: ^0.2.4
+  # The TTS client (`POST /voice/tts`) runs on the app's Dio, its auth
+  # interceptor included.
+  dio: ^5.7.0
+  # The reply player (media_kit's registration is the app's).
+  just_audio: ^0.10.5
+  # The microphone: PCM16 mono with the platform's voice processing.
+  record: ^7.1.2
+  # The reply clip files' unique names, and each sentence's Idempotency-Key.
+  uuid: ^4.5.1
+  # The relay's WebSocket (dart:io; a stub on web).
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Deterministic time for the transport's deadlines, retries and pacing.
+  fake_async: ^1.3.1
+  # The golden fixture's and the frozen parsers' SHA-256.
+  crypto: ^3.0.6
+  # Only for the frozen copy of tapper build 113's `voice_limit.dart`, which
+  # imports it (test/installed_clients/); the package itself formats no text.
+  intl: ^0.20.2

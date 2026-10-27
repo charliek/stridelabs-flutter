@@ -7,9 +7,9 @@ releasing (pin-and-bump), local development and CI. Read it first.
 ## What this is
 
 Shared Flutter/Dart packages for StrideLabs native apps, in `packages/`:
-`stridelabs_slauth`, `stridelabs_drive` and `stridelabs_logging`. They are
-not published to pub.dev. Consumers depend on them as git dependencies over
-`https`, pinned to a release tag.
+`stridelabs_slauth`, `stridelabs_drive`, `stridelabs_logging` and
+`stridelabs_voice`. They are not published to pub.dev. Consumers depend on
+them as git dependencies over `https`, pinned to a release tag.
 
 ## What belongs here
 

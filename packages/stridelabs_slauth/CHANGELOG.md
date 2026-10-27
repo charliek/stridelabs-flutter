@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-10-27
 
 A provider-neutral auth core (lumen plan 001, SF1). slauth/Hydra stays the
 default: apps that construct `AuthService(config: SlauthConfig, …)` keep

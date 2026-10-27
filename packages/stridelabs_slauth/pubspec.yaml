@@ -1,6 +1,6 @@
 name: stridelabs_slauth
 description: "slauth (Ory Hydra + Kratos) OAuth2 PKCE client for StrideLabs native apps — system-browser login, token refresh with rotation, and a debug-only headless login."
-version: 0.1.0
+version: 0.2.0
 publish_to: 'none'
 
 environment:
