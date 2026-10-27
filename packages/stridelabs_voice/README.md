@@ -80,9 +80,16 @@ The package declares no manifest entries; the app does.
 - **macOS:** the `com.apple.security.device.audio-input` entitlement and an
   `NSMicrophoneUsageDescription`.
 - **Linux:** `libmpv` through `just_audio_media_kit`, which the app registers
-  (this package depends on `just_audio` only).
+  (this package depends on `just_audio` only). `RecordMicCapture` needs
+  PulseAudio's `parecord` on the `PATH` (`record_linux` spawns it for the
+  capture). It works against PipeWire's PulseAudio server too, but is
+  installed separately (Debian/Ubuntu: `pulseaudio-utils`). The
+  package streams raw PCM, so `ffmpeg` is not needed (it is for recording to a
+  file only). `pactl` is used only to list input devices, which this package
+  does not do. `record_linux` reports microphone permission as always granted.
 - **Web:** no microphone (the relay channel and clip files are stubs).
-- **iOS:** untried.
+- **iOS:** untried. An app using `RecordMicCapture` must set
+  `NSMicrophoneUsageDescription` in its `Info.plist`.
 
 ## Known limits
 

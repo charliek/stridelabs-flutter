@@ -86,7 +86,9 @@ bool isUnfinishedFragment(String fragment) {
 /// `speech_start` (one arriving AT the deadline still merges) and is joined
 /// to the fragment that follows; a finished one is emitted at once. A
 /// `speech_start` that never completes is flushed [speechEndFlush] after its
-/// `speech_end`, or [speechStartFlush] after the start; if that segment's
+/// `speech_end`, or [speechStartFlush] after the start; each `speech_start`
+/// re-arms that timer, so a speaker who resumes after a `speech_end` is timed
+/// from the latest start, not the earlier end. If that segment's
 /// `end_of_turn` turns up after all, it is not emitted a second time.
 /// [micOff] emits what is pending once the final `end_of_turn` is in (at
 /// once when nothing is outstanding).
@@ -182,10 +184,10 @@ class TurnAssembler {
     // The speaker went on: the fragment waiting for this joins the next one.
     _cancelMerge();
     _utteranceStart ??= now;
-    if (!_segmentOpen) {
-      _segmentOpen = true;
-      _armFlush(speechStartFlush);
-    }
+    // Every start (re)arms the start timer, replacing a stale speech_end one:
+    // a speaker who resumed after a pause is not flushed mid-speech.
+    _segmentOpen = true;
+    _armFlush(speechStartFlush);
   }
 
   void speechEnd() {

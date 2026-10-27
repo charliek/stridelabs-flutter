@@ -34,6 +34,16 @@ class RelayTtsClient implements ReplyTts {
   /// headers arrived, and a body broken after its headers keeps its status
   /// and `Retry-After`.
   ///
+  /// The wrapper applies to every request on [dio], not only this client's,
+  /// so an app that shares one Dio gets it everywhere. Configure or replace
+  /// the adapter BEFORE constructing the client. Replacing it afterwards
+  /// removes the watch: an unwatched request is never taken for a lost
+  /// connection, so [isTransportFailure] is false and no transport failure is
+  /// retried (a 401's refresh-and-retry is unaffected), and a body that breaks after its headers loses its status and
+  /// `Retry-After`. Code that casts `dio.httpClientAdapter` to a concrete
+  /// adapter type after construction fails, because the adapter is now a
+  /// [ResponseHeadersWatch].
+  ///
   /// [path] is joined to the Dio's base URL as Dio joins it (by
   /// concatenation, so the leading `/` works with or without a trailing one
   /// on the base).

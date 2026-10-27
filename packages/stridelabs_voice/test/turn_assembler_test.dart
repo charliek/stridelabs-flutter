@@ -425,6 +425,49 @@ void main() {
       });
     });
 
+    test('a speech_start after a speech_end re-arms the flush: no mid-speech '
+        'flush, and the real end_of_turn is still emitted', () {
+      fakeAsync((async) {
+        final h = _Harness(async, isUnfinished: (_) => false);
+        h.replay([
+          (0, _start, null),
+          (200, _partial, 'hello'),
+          (400, _end, null),
+          (900, _start, null), // the speaker resumes, 500 ms later
+        ]);
+        // 1 s after the first end: the stale speech_end timer is gone.
+        h.replay([(1400, _partial, 'hello wor')]);
+        expect(h.out, isEmpty);
+        expect(h.segmentsFlushed, 0);
+        h.replay([(2000, _eot, 'hello world')]);
+        expect(h.texts, ['hello world']);
+        async.elapse(const Duration(seconds: 20));
+        expect(h.texts, ['hello world'], reason: 'said once');
+        expect(h.segmentsFlushed, 0);
+      });
+    });
+
+    test('the re-armed start timer still flushes a segment that never '
+        'completes, from the second start', () {
+      fakeAsync((async) {
+        final h = _Harness(async);
+        h.replay([
+          (0, _start, null),
+          (200, _partial, 'hello'),
+          (400, _end, null),
+          (900, _start, null),
+        ]);
+        // Not at the first end + 1 s, nor at the first start + 10 s.
+        h.replay([(10899, _partial, 'hello')]);
+        expect(h.out, isEmpty);
+        expect(h.segmentsFlushed, 0);
+        // The second start + 10 s.
+        async.elapse(const Duration(milliseconds: 1));
+        expect(h.texts, ['hello']);
+        expect(h.segmentsFlushed, 1);
+      });
+    });
+
     test('a silent start (no partial, no end_of_turn) emits nothing', () {
       fakeAsync((async) {
         final h = _Harness(async);
