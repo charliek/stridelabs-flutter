@@ -19,7 +19,7 @@ dependencies pinned to a release tag, from the app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  stridelabs_slauth: {git: {url: https://github.com/charliek/stridelabs-flutter.git, ref: v0.1.0, path: packages/stridelabs_slauth}}
+  stridelabs_slauth: {git: {url: https://github.com/charliek/stridelabs-flutter.git, ref: v0.2.0, path: packages/stridelabs_slauth}}
 ```
 
 The repo is public, so use the `https` URL (no SSH key needed in CI or on a

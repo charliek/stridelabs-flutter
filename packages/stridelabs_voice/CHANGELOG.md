@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-10-27
 
 The first entry: the voice client lumen and tapper each kept a copy of, as one
 package (lumen plan 003, W1.7). Not published to pub.dev.
