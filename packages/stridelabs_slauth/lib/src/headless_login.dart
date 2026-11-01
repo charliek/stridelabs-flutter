@@ -19,9 +19,9 @@ const bool kIsDebugMode = !_kReleaseMode && !_kProfileMode;
 ///
 /// [message] names the step and at most an HTTP status, a Dio error category,
 /// an error class or a registered OAuth2 error code. It never carries a URL
-/// (the authorize URLs hold `state` and the PKCE challenge), a response body
-/// (token responses hold tokens), a value from either, or another exception's
-/// text, so it is safe to print or show.
+/// (the authorize URLs hold `state` and the PKCE challenge), a consent
+/// challenge, a response body (token responses hold tokens), a value from any
+/// of those, or another exception's text, so it is safe to print or show.
 class HeadlessLoginException implements Exception {
   HeadlessLoginException(this.message);
   final String message;
@@ -37,6 +37,11 @@ class HeadlessLoginException implements Exception {
 /// callbacks are never auto-followed by any HTTP client), validates `state`, and
 /// exchanges the code at `/oauth2/token`. Returns the raw token response map —
 /// the same shape [AuthService.storeTokens] persists.
+///
+/// A hop that lands on slauth's consent page, which `AUTH_MODE=native` shows
+/// first-party custom-scheme clients on every authorize, is approved through
+/// slauth's consent API on the user's behalf. Under Ory those clients
+/// auto-consent, so the page never appears.
 ///
 /// This bypasses the system browser and is intended only for local E2E driving /
 /// a live driving tool. It is hard-guarded to debug builds: constructing it
@@ -173,24 +178,32 @@ class HeadlessLogin {
     String? code;
     for (var hop = 0; hop < _maxHops; hop++) {
       step.name = 'authorize hop $hop';
-      final r = await _dio.get(
-        url,
-        options: Options(
-          headers: {'Accept': 'text/html'},
-          followRedirects: false,
-          validateStatus: (s) => s != null && s < 400,
-        ),
-      );
-      final status = r.statusCode ?? 0;
-      if (status < 300 || status > 399) {
-        // Never the URL: it carries `state` and the PKCE challenge.
-        throw HeadlessLoginException(
-          'authorize hop $hop: expected a redirect, got HTTP $status',
+      final challenge = _consentChallenge(Uri.parse(url));
+      final String location;
+      if (challenge != null) {
+        step.name = 'consent accept';
+        location = await _acceptConsent(challenge, step);
+      } else {
+        final r = await _dio.get(
+          url,
+          options: Options(
+            headers: {'Accept': 'text/html'},
+            followRedirects: false,
+            validateStatus: (s) => s != null && s < 400,
+          ),
         );
-      }
-      final location = r.headers.value('location');
-      if (location == null) {
-        throw HeadlessLoginException('authorize hop $hop: missing Location');
+        final status = r.statusCode ?? 0;
+        if (status < 300 || status > 399) {
+          // Never the URL: it carries `state` and the PKCE challenge.
+          throw HeadlessLoginException(
+            'authorize hop $hop: expected a redirect, got HTTP $status',
+          );
+        }
+        final header = r.headers.value('location');
+        if (header == null) {
+          throw HeadlessLoginException('authorize hop $hop: missing Location');
+        }
+        location = header;
       }
       url = Uri.parse(url).resolve(location).toString();
       if (url.startsWith(config.redirectUri)) {
@@ -242,6 +255,39 @@ class HeadlessLogin {
       throw HeadlessLoginException('token response missing access_token');
     }
     return tokens;
+  }
+
+  /// The `consent_challenge` if [url] is slauth's consent page, the SPA route
+  /// its consent provider sends first-party custom-scheme clients to under
+  /// `AUTH_MODE=native`. The provider route `/oauth/consent` carries the same
+  /// parameter and is an ordinary redirect, so the path must match exactly.
+  static String? _consentChallenge(Uri url) {
+    if (url.path != '/consent') return null;
+    final challenge = url.queryParameters['consent_challenge'];
+    return challenge == null || challenge.isEmpty ? null : challenge;
+  }
+
+  /// Approve [challenge] the way the page's Continue button does: a JSON POST
+  /// with the session cookie, no Origin needed. Returns where to go next.
+  Future<String> _acceptConsent(String challenge, _Step step) async {
+    final res = await _dio.post(
+      '${config.baseUrl}/api/v1/oauth/consent/accept',
+      data: jsonEncode({'consent_challenge': challenge}),
+      options: Options(
+        contentType: Headers.jsonContentType,
+        responseType: ResponseType.json,
+      ),
+    );
+    if (res.statusCode != 200) {
+      throw HeadlessLoginException('consent accept failed: ${res.statusCode}');
+    }
+    final redirectTo = _asMap(res.data, step)['redirect_to'];
+    if (redirectTo is! String || redirectTo.isEmpty) {
+      throw HeadlessLoginException(
+        'consent accept: response has no redirect_to',
+      );
+    }
+    return redirectTo;
   }
 
   /// Exercise refresh-token rotation once (used by a live driving tool to

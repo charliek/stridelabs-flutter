@@ -379,10 +379,18 @@ marker, so upgrading signs nobody out.
 a browser, for local E2E. It throws if constructed in a release or profile
 build. Persist its result with `AuthService.storeTokens`.
 
+If a hop lands on slauth's consent page (`/consent?consent_challenge=...`, shown
+to first-party custom-scheme clients on every authorize under `AUTH_MODE=native`),
+it approves the request through `POST /api/v1/oauth/consent/accept` without asking
+anyone, then carries on. The page itself is never fetched.
+
 Every failure is a `HeadlessLoginException` whose message is safe to print. It
-names the step (e.g. `authorize hop 2`, `token exchange`) plus, at most, an
+names the step (e.g. `authorize hop 2`, `consent accept`, `token exchange`) plus, at most, an
 HTTP status, a Dio error category, an error class or a registered OAuth2 error
 code. It never includes a URL (the authorize URLs carry `state` and the PKCE
-challenge), a response body, a callback value or another exception's text.
+challenge), a consent challenge, a response body, a callback value or another exception's text.
 Network and JSON-decode errors are reduced to that form rather than passed
 through.
+
+`test/headless_login_live_test.dart` runs the flow against a real
+`AUTH_MODE=native` slauth; it's skipped unless `SLAUTH_LIVE_BASE` is set.
