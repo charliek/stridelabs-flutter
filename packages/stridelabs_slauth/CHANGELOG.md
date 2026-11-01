@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 - 2026-11-01
 
 ### Fixed
 - `HeadlessLogin` (debug-only) completes against `AUTH_MODE=native` slauth: a hop
