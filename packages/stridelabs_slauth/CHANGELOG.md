@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `HeadlessLogin` (debug-only) completes against `AUTH_MODE=native` slauth: a hop
+  landing on the consent page (`/consent` with a `consent_challenge`) is approved
+  through `POST /api/v1/oauth/consent/accept` and the flow carries on along the
+  returned `redirect_to`, instead of failing with `expected a redirect, got HTTP
+  200`. Failures name the `consent accept` step and never the challenge. A chain
+  with no consent page (Ory's) takes the same requests as before.
+
 ## 0.2.0 - 2026-10-27
 
 A provider-neutral auth core (lumen plan 001, SF1). slauth/Hydra stays the

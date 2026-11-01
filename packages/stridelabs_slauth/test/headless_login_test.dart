@@ -35,10 +35,35 @@ String _makeJwt(String sub) {
 ///   GET  /oauth/consent                           -> 302 `authorize url`
 ///   GET  /oauth2/auth  (#3)                       -> 302 slaudio://auth/callback?code&state
 ///   POST /oauth2/token                            -> 200 JSON tokens
+///
+/// With [screenChallenge], the chain slauth runs for a first-party custom-scheme
+/// client under AUTH_MODE=native: `/oauth/consent` sends the browser to the SPA's
+/// `/consent` page instead of back to authorize, and only
+/// `POST /api/v1/oauth/consent/accept` moves the flow on.
+///
+/// With [oryChallenge], the chain's real query under Ory: the provider route
+/// `/oauth/consent` carries a `consent_challenge` and auto-consents.
 class _ReplayAdapter implements HttpClientAdapter {
-  _ReplayAdapter({required this.redirectUri, this.callbackQuery});
+  _ReplayAdapter({
+    required this.redirectUri,
+    this.callbackQuery,
+    this.screenChallenge,
+    this.oryChallenge,
+    this.accept,
+  });
 
   final String redirectUri;
+
+  /// The challenge the `/oauth/consent` hop sends to the SPA page with.
+  final String? screenChallenge;
+
+  /// The challenge the second authorize sends to `/oauth/consent` with.
+  final String? oryChallenge;
+
+  /// Overrides the accept answer. Given the URL the default redirects to.
+  final ResponseBody Function(String redirectTo)? accept;
+
+  final List<RequestOptions> acceptRequests = [];
 
   /// Builds the callback query string from the observed `state`. Defaults to a
   /// valid `code`+matching-`state`. Override for the mismatch / error cases.
@@ -93,7 +118,13 @@ class _ReplayAdapter implements HttpClientAdapter {
         _authorizeUrl = uri.toString();
         return _redirect('/oauth/login');
       }
-      if (authHits == 2) return _redirect('/oauth/consent');
+      if (authHits == 2) {
+        return _redirect(
+          oryChallenge == null
+              ? '/oauth/consent'
+              : '/oauth/consent?consent_challenge=$oryChallenge',
+        );
+      }
       final state = uri.queryParameters['state'] ?? '';
       final query =
           callbackQuery?.call(state) ?? 'code=AUTH-CODE-123&state=$state';
@@ -101,8 +132,36 @@ class _ReplayAdapter implements HttpClientAdapter {
     }
 
     if (method == 'GET' &&
+        path == '/oauth/consent' &&
+        screenChallenge != null) {
+      // Absolute, as slauth sends it (`AUTH_UI_URL` + `/consent?...`).
+      return _redirect(
+        Uri.parse('https://auth.test/consent')
+            .replace(queryParameters: {'consent_challenge': screenChallenge})
+            .toString(),
+      );
+    }
+
+    if (method == 'GET' &&
         (path == '/oauth/login' || path == '/oauth/consent')) {
       return _redirect(_authorizeUrl!);
+    }
+
+    if (method == 'GET' && path == '/consent') {
+      // The SPA's shell: a 200 whatever the page goes on to do.
+      return ResponseBody.fromString(
+        '<!doctype html><div id="root"></div>',
+        200,
+        headers: {
+          'content-type': ['text/html'],
+        },
+      );
+    }
+
+    if (method == 'POST' && path == '/api/v1/oauth/consent/accept') {
+      acceptRequests.add(options);
+      return accept?.call(_authorizeUrl!) ??
+          _jsonResponse(200, {'redirect_to': _authorizeUrl});
     }
 
     if (method == 'POST' && path == '/oauth2/token') {
@@ -134,6 +193,14 @@ class _ReplayAdapter implements HttpClientAdapter {
     return ResponseBody.fromString(jsonEncode(data), status, headers: headers);
   }
 }
+
+ResponseBody _jsonResponse(int status, Object data) => ResponseBody.fromString(
+  jsonEncode(data),
+  status,
+  headers: {
+    'content-type': ['application/json'],
+  },
+);
 
 HeadlessLogin _buildLogin(_ReplayAdapter adapter) {
   final dio = Dio(BaseOptions(validateStatus: (s) => s != null && s < 400))
@@ -219,4 +286,208 @@ void main() {
       );
     });
   });
+
+  group('HeadlessLogin on the consent screen', () {
+    // Needs percent-encoding in the page's URL, so a test sees it decoded.
+    const challenge = 'ch+al/len=ge';
+
+    Matcher failsWith(String message) => throwsA(
+      isA<HeadlessLoginException>().having(
+        (e) => e.message,
+        'message',
+        message,
+      ),
+    );
+
+    test('accepts the challenge and finishes with tokens', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+      );
+
+      final tokens = await _buildLogin(
+        adapter,
+      ).login(email: 'test@example.com', password: 'secret');
+
+      expect(tokens['access_token'], isA<String>());
+      expect(tokens['refresh_token'], 'refresh-token-1');
+      expect(adapter.requestLog, [
+        'GET /.ory/self-service/login/browser',
+        'POST /self-service/login',
+        'GET /oauth2/auth',
+        'GET /oauth/login',
+        'GET /oauth2/auth',
+        'GET /oauth/consent',
+        'POST /api/v1/oauth/consent/accept',
+        'GET /oauth2/auth',
+        'POST /oauth2/token',
+      ], reason: 'the page itself is never fetched');
+    });
+
+    test('sends what slauth\'s accept requires', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+      );
+
+      await _buildLogin(adapter).login(email: 'a@b', password: 'p');
+
+      final request = adapter.acceptRequests.single;
+      expect(request.uri.toString(), startsWith(_config.baseUrl));
+      expect(jsonDecode(request.data as String), {
+        'consent_challenge': challenge,
+      });
+      expect(request.contentType, Headers.jsonContentType);
+      expect(
+        '${request.headers['cookie']}',
+        contains('ory_session_local'),
+        reason: 'the challenge is bound to the session',
+      );
+    });
+
+    test('a redirect_to straight to the callback finishes the flow', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+        accept: (authorizeUrl) {
+          final state = Uri.parse(authorizeUrl).queryParameters['state'];
+          return _jsonResponse(200, {
+            'redirect_to': '${_config.redirectUri}?code=C&state=$state',
+          });
+        },
+      );
+
+      final tokens = await _buildLogin(
+        adapter,
+      ).login(email: 'a@b', password: 'p');
+
+      expect(tokens['access_token'], isA<String>());
+      expect(adapter.authHits, 2);
+    });
+
+    test('a state mismatch after the accept is still refused', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+        accept: (_) => _jsonResponse(200, {
+          'redirect_to': '${_config.redirectUri}?code=C&state=WRONG',
+        }),
+      );
+
+      await expectLater(
+        _buildLogin(adapter).login(email: 'a@b', password: 'p'),
+        failsWith('state mismatch'),
+      );
+    });
+
+    for (final status in [400, 401, 403, 422, 502]) {
+      test('an accept answering $status fails, naming the status', () async {
+        final adapter = _ReplayAdapter(
+          redirectUri: _config.redirectUri,
+          screenChallenge: challenge,
+          accept: (_) => _jsonResponse(status, {'detail': 'refused'}),
+        );
+
+        await expectLater(
+          _buildLogin(adapter).login(email: 'a@b', password: 'p'),
+          failsWith('consent accept failed: badResponse (HTTP $status)'),
+        );
+        expect(adapter.requestLog, isNot(contains('POST /oauth2/token')));
+      });
+    }
+
+    test('an accept answering 200 with no redirect_to fails', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+        accept: (_) => _jsonResponse(200, {'ok': true}),
+      );
+
+      await expectLater(
+        _buildLogin(adapter).login(email: 'a@b', password: 'p'),
+        failsWith('consent accept: response has no redirect_to'),
+      );
+    });
+
+    test('a client Dio that lets every status through still fails', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        screenChallenge: challenge,
+        accept: (_) =>
+            _jsonResponse(403, {'redirect_to': 'https://auth.test/'}),
+      );
+      final login = HeadlessLogin(
+        config: _config,
+        dio: Dio(BaseOptions(validateStatus: (_) => true))
+          ..httpClientAdapter = adapter,
+        cookieJar: CookieJar(),
+      );
+
+      await expectLater(
+        login.login(email: 'a@b', password: 'p'),
+        failsWith('consent accept failed: 403'),
+      );
+    });
+
+    test('Ory\'s chain, with a challenge on the provider route, stays a chain '
+        'of redirects with no accept', () async {
+      final adapter = _ReplayAdapter(
+        redirectUri: _config.redirectUri,
+        oryChallenge: challenge,
+      );
+
+      final tokens = await _buildLogin(
+        adapter,
+      ).login(email: 'a@b', password: 'p');
+
+      expect(tokens['access_token'], isA<String>());
+      expect(adapter.acceptRequests, isEmpty);
+      expect(adapter.requestLog, [
+        'GET /.ory/self-service/login/browser',
+        'POST /self-service/login',
+        'GET /oauth2/auth',
+        'GET /oauth/login',
+        'GET /oauth2/auth',
+        'GET /oauth/consent',
+        'GET /oauth2/auth',
+        'POST /oauth2/token',
+      ]);
+    });
+
+    for (final (name, location) in [
+      ('no challenge', '/consent'),
+      ('an empty challenge', '/consent?consent_challenge='),
+      ('another path', '/other/consent?consent_challenge=x'),
+    ]) {
+      test('a hop with $name is not treated as the consent page', () async {
+        final adapter = _PageAdapter(location);
+        await expectLater(
+          _buildLogin(adapter).login(email: 'a@b', password: 'p'),
+          failsWith('authorize hop 1: expected a redirect, got HTTP 200'),
+        );
+        expect(adapter.acceptRequests, isEmpty);
+      });
+    }
+  });
+}
+
+/// Sends the first authorize straight to [location], a page answering 200.
+class _PageAdapter extends _ReplayAdapter {
+  _PageAdapter(this.location) : super(redirectUri: _config.redirectUri);
+
+  final String location;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final path = options.uri.path;
+    if (path == '/oauth2/auth') return _redirect(location);
+    if (path.endsWith('/consent')) {
+      return ResponseBody.fromString('<html></html>', 200);
+    }
+    return super.fetch(options, requestStream, cancelFuture);
+  }
 }
