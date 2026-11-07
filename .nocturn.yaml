@@ -1,0 +1,7 @@
+version: 1
+targets:
+  packages:
+    kind: library
+    # The Dart packages under packages/, consumed by git tag. Library packages
+    # commit no pubspec.lock (.gitignore), so there is nothing to ship-list.
+    released: { tag_pattern: '^v\d+\.\d+\.\d+$' }
