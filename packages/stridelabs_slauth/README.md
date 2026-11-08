@@ -375,22 +375,34 @@ marker, so upgrading signs nobody out.
 
 ## Debug-only headless login
 
-`HeadlessLogin` drives Kratos password login and the PKCE redirect chain without
-a browser, for local E2E. It throws if constructed in a release or profile
-build. Persist its result with `AuthService.storeTokens`.
+`HeadlessLogin` signs in with one `POST /api/v1/account/login` (JSON
+`{email, password}`, which sets the session cookie) and then drives the PKCE
+redirect chain without a browser, for local E2E. It throws if constructed in a
+release or profile build. Persist its result with `AuthService.storeTokens`.
 
-If a hop lands on slauth's consent page (`/consent?consent_challenge=...`, shown
-to first-party custom-scheme clients on every authorize under `AUTH_MODE=native`),
-it approves the request through `POST /api/v1/oauth/consent/accept` without asking
-anyone, then carries on. The page itself is never fetched.
+If a hop lands on slauth's consent page (`/consent?flow=...`, shown to
+first-party custom-scheme clients on every authorize), it approves the request
+through `POST /api/v1/oauth/consent/accept` (`{flow}`) without asking anyone,
+then carries on. The page itself is never fetched.
+
+**Origin.** slauth requires the auth UI's exact `Origin` (and a JSON content
+type) on both POSTs, so `HeadlessLogin` sends `SlauthConfig.baseUrl`'s origin.
+That assumes `baseUrl`'s origin equals slauth's `AUTH_UI_URL` origin, which holds
+for local slauth (prox, `native-stack.sh`) and both deployed environments. A
+`baseUrl` that reaches slauth through a different host fails at the login step
+with `login failed: badResponse (HTTP 403)`.
+
+**Needs slauth at or after N7.** v0.3.0 has no fallback to the `/.ory` shim:
+against an older slauth the login POST fails with a 4xx, such as `login failed:
+badResponse (HTTP 405)` from an N6-era slauth, whose fallback refuses the POST.
 
 Every failure is a `HeadlessLoginException` whose message is safe to print. It
 names the step (e.g. `authorize hop 2`, `consent accept`, `token exchange`) plus, at most, an
 HTTP status, a Dio error category, an error class or a registered OAuth2 error
 code. It never includes a URL (the authorize URLs carry `state` and the PKCE
-challenge), a consent challenge, a response body, a callback value or another exception's text.
+challenge), a consent flow handle, a response body, a callback value or another exception's text.
 Network and JSON-decode errors are reduced to that form rather than passed
 through.
 
 `test/headless_login_live_test.dart` runs the flow against a real
-`AUTH_MODE=native` slauth; it's skipped unless `SLAUTH_LIVE_BASE` is set.
+N7 slauth; it's skipped unless `SLAUTH_LIVE_BASE` is set.

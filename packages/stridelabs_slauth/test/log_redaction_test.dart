@@ -121,10 +121,10 @@ final _endpointFailures = <String, Future<TokenResponse> Function()>{
 /// for this attempt (`state`, the PKCE challenge and verifier) as it sees them
 /// on the wire, so a test can assert none of them reaches an error.
 class _HeadlessSlauth {
-  _HeadlessSlauth({this.flow, this.authorize, this.accept, this.token});
+  _HeadlessSlauth({this.signIn, this.authorize, this.accept, this.token});
 
-  /// Overrides `GET /.ory/self-service/login/browser`.
-  final ResponseBody Function()? flow;
+  /// Overrides `POST /api/v1/account/login`.
+  final ResponseBody Function()? signIn;
 
   /// Overrides `GET /oauth2/auth` (given the request's `state`).
   final ResponseBody Function(RequestOptions o, String state)? authorize;
@@ -151,8 +151,7 @@ class _HeadlessSlauth {
   factory _HeadlessSlauth.onConsentScreen(
     ResponseBody Function(RequestOptions o) accept,
   ) => _HeadlessSlauth(
-    authorize: (_, _) =>
-        redirect('https://auth.test/consent?consent_challenge=$_challenge'),
+    authorize: (_, _) => redirect('https://auth.test/consent?flow=$_challenge'),
     accept: accept,
   );
 
@@ -166,16 +165,9 @@ class _HeadlessSlauth {
 
   ResponseBody _respond(RequestOptions o) {
     final path = o.uri.path;
-    if (path.endsWith('/self-service/login/browser')) {
-      return flow?.call() ??
-          jsonBody({
-            'ui': {
-              'action': 'https://auth.test/self-service/login?flow=f1',
-              'nodes': <Object>[],
-            },
-          });
+    if (path == '/api/v1/account/login') {
+      return signIn?.call() ?? jsonBody({'ok': true});
     }
-    if (path == '/self-service/login') return jsonBody({'session': {}});
     if (path == '/oauth2/auth') {
       final q = o.uri.queryParameters;
       final state = q['state']!;
@@ -525,7 +517,7 @@ void main() {
         final slauth = _HeadlessSlauth(
           authorize: (_, _) => hits++ == 0
               ? _HeadlessSlauth.redirect(
-                  'https://auth.test/consent?consent_challenge=$_challenge',
+                  'https://auth.test/consent?flow=$_challenge',
                 )
               : rawBody(_canaryJson, 400),
           accept: (_) => jsonBody({
@@ -540,9 +532,8 @@ void main() {
       test('a malformed Location carrying the challenge', () async {
         await expectRedactedFailure(
           _HeadlessSlauth(
-            authorize: (_, _) => _HeadlessSlauth.redirect(
-              'http://[consent?consent_challenge=$_challenge',
-            ),
+            authorize: (_, _) =>
+                _HeadlessSlauth.redirect('http://[consent?flow=$_challenge'),
           ),
           login,
           step: 'authorize hop 0',
@@ -597,20 +588,29 @@ void main() {
       });
     }
 
-    test('the login flow answers malformed JSON', () async {
-      await expectRedactedFailure(
-        _HeadlessSlauth(
-          flow: () => rawBody(
-            '{"ui": "$_body", "csrf": "$_state"',
-            200,
-            contentType: 'text/plain',
+    for (final (name, body, detail)
+        in <(String, ResponseBody Function(), String)>[
+          (
+            '401 with a canary body',
+            () => rawBody(_canaryJson, 401),
+            'badResponse (HTTP 401)',
           ),
-        ),
-        login,
-        step: 'login flow',
-        sawAuthorize: false,
-      );
-    });
+          (
+            '403 text with canaries',
+            () => rawBody(_canaryMessage, 403, contentType: 'text/plain'),
+            'badResponse (HTTP 403)',
+          ),
+        ]) {
+      test('the login answers $name', () async {
+        await expectRedactedFailure(
+          _HeadlessSlauth(signIn: body),
+          login,
+          step: 'login',
+          detail: detail,
+          sawAuthorize: false,
+        );
+      });
+    }
   });
 
   test('failure lines name the operation, error class and status', () async {
