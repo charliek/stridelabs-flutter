@@ -1,6 +1,9 @@
-// Drives HeadlessLogin end to end against a real slauth in AUTH_MODE=native,
-// where first-party custom-scheme clients take the consent screen on every
-// authorize. Skipped unless SLAUTH_LIVE_BASE is set, so CI never needs a stack.
+// Drives HeadlessLogin end to end against a real slauth at or after N7
+// (`POST /api/v1/account/login`, `/consent?flow=`), where first-party
+// custom-scheme clients take the consent screen on every authorize. The Origin
+// HeadlessLogin sends is SLAUTH_LIVE_BASE's, so it must equal the stack's
+// AUTH_UI_URL origin (native-stack.sh and prox set it so).
+// Skipped unless SLAUTH_LIVE_BASE is set, so CI never needs a stack.
 //
 // From a slauth checkout, `scripts/native-stack.sh up`, then:
 //
@@ -74,6 +77,7 @@ void main() {
 
         // ignore: avoid_print
         print('live $clientId: ${paths.join(' -> ')}');
+        expect(paths, contains('POST /api/v1/account/login'));
         expect(paths, contains('POST /api/v1/oauth/consent/accept'));
 
         final access = _jwtClaims(tokens['access_token']);

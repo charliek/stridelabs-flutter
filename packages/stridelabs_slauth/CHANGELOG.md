@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 - 2026-11-09
+
+### Changed
+- `HeadlessLogin` (debug-only) signs in with one `POST /api/v1/account/login`
+  (JSON `{email, password}`) instead of the `/.ory/self-service/login/browser`
+  flow and its submit. A refusal throws `login failed: badResponse (HTTP N)`;
+  failures stay redacted as before.
+- The consent page is recognized at `/consent?flow=` (was `consent_challenge`),
+  and the accept posts `{flow}`.
+- Both POSTs send `Origin: <baseUrl's origin>` and a JSON content type, which
+  slauth requires. `baseUrl`'s origin must equal slauth's `AUTH_UI_URL` origin
+  (true for local slauth via prox or the native stack, and both deployed
+  environments).
+
+### Fixed
+- The consent accept sent no `Origin`, so slauth refused it with 403 since
+  v2026.11.04.
+
+**Upgrade note:** requires slauth at or after N7. There is no fallback to the
+`/.ory` shim, so against an older slauth `HeadlessLogin` fails at the login POST.
+Apps that don't use `HeadlessLogin` are unaffected.
+
 ## 0.2.1 - 2026-11-01
 
 ### Fixed

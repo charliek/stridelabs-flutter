@@ -20,7 +20,7 @@ const bool kIsDebugMode = !_kReleaseMode && !_kProfileMode;
 /// [message] names the step and at most an HTTP status, a Dio error category,
 /// an error class or a registered OAuth2 error code. It never carries a URL
 /// (the authorize URLs hold `state` and the PKCE challenge), a consent
-/// challenge, a response body (token responses hold tokens), a value from any
+/// flow handle, a response body (token responses hold tokens), a value from any
 /// of those, or another exception's text, so it is safe to print or show.
 class HeadlessLoginException implements Exception {
   HeadlessLoginException(this.message);
@@ -31,22 +31,26 @@ class HeadlessLoginException implements Exception {
 
 /// DEBUG-ONLY headless password login against slauth.
 ///
-/// A faithful Dart port of the verified native-flow probe: it drives Kratos
-/// password login (browser flow, JSON) to obtain a session cookie, then runs the
+/// A faithful Dart port of the verified native-flow probe: it signs in with one
+/// `POST /api/v1/account/login` (JSON) to obtain a session cookie, then runs the
 /// PKCE `/oauth2/auth` round-trip following redirects MANUALLY (custom-scheme
 /// callbacks are never auto-followed by any HTTP client), validates `state`, and
 /// exchanges the code at `/oauth2/token`. Returns the raw token response map —
 /// the same shape [AuthService.storeTokens] persists.
 ///
-/// A hop that lands on slauth's consent page, which `AUTH_MODE=native` shows
-/// first-party custom-scheme clients on every authorize, is approved through
-/// slauth's consent API on the user's behalf. Under Ory those clients
-/// auto-consent, so the page never appears.
+/// A hop that lands on slauth's consent page (`/consent?flow=`), which slauth
+/// shows first-party custom-scheme clients on every authorize, is approved
+/// through slauth's consent API on the user's behalf.
 ///
 /// This bypasses the system browser and is intended only for local E2E driving /
 /// a live driving tool. It is hard-guarded to debug builds: constructing it
-/// in a release/profile build throws. There is intentionally NO CORS/Origin
-/// handling — that is a web-browser concern, not a native-client one.
+/// in a release/profile build throws.
+///
+/// slauth requires the auth UI's `Origin` on the login and consent POSTs, so
+/// this sends `config.baseUrl`'s origin. That assumes the base URL's origin
+/// equals slauth's `AUTH_UI_URL` origin (true for local slauth via prox or the
+/// native stack, and for both deployed environments). Needs slauth at or after
+/// N7: there is no fallback to the `/.ory` shim.
 ///
 /// Every failure is a [HeadlessLoginException] with a redacted message (see
 /// there): network and decode errors are reduced to their step, status and
@@ -77,6 +81,10 @@ class HeadlessLogin {
   final SlauthConfig config;
   final CookieJar _jar;
   late final Dio _dio;
+
+  /// The `Origin` slauth's account and consent POSTs require: [config]'s base
+  /// URL origin, which must equal slauth's `AUTH_UI_URL` origin.
+  String get _origin => Uri.parse(config.baseUrl).origin;
 
   /// Maximum manual redirect hops before giving up (the probe needs 5).
   static const _maxHops = 12;
@@ -111,7 +119,7 @@ class HeadlessLogin {
     required String email,
     required String password,
   }) {
-    final step = _Step('login flow');
+    final step = _Step('login');
     return _redacted(step, () => _login(email, password, step));
   }
 
@@ -122,43 +130,20 @@ class HeadlessLogin {
   ) async {
     final base = config.baseUrl;
 
-    // 1. Kratos password login (browser flow, JSON) → session cookie.
-    final flowRes = await _dio.get(
-      '$base/.ory/self-service/login/browser',
-      options: Options(
-        headers: {'Accept': 'application/json'},
-        responseType: ResponseType.json,
-      ),
-    );
-    final flow = _asMap(flowRes.data, step);
-    final ui = _asMap(flow['ui'], step);
-    final action = ui['action'] as String?;
-    if (action == null) {
-      throw HeadlessLoginException('login flow missing ui.action');
-    }
-    final csrf = _extractCsrf(ui['nodes']);
-
-    step.name = 'kratos login';
+    // 1. Password login: one JSON POST, which sets the session cookie.
+    final origin = _origin;
     final loginRes = await _dio.post(
-      action,
-      data: jsonEncode({
-        'method': 'password',
-        'identifier': email,
-        'password': password,
-        'csrf_token': csrf,
-      }),
+      '$base/api/v1/account/login',
+      data: jsonEncode({'email': email, 'password': password}),
       options: Options(
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        responseType: ResponseType.json,
+        headers: {'Origin': origin},
+        contentType: Headers.jsonContentType,
+        // The body isn't read on success, and a refusal's is never quoted.
+        responseType: ResponseType.plain,
       ),
     );
     if (loginRes.statusCode != 200) {
-      throw HeadlessLoginException(
-        'kratos login failed: ${loginRes.statusCode}',
-      );
+      throw HeadlessLoginException('login failed: ${loginRes.statusCode}');
     }
 
     // 2. Authorize with PKCE, following redirects manually until the
@@ -178,11 +163,11 @@ class HeadlessLogin {
     String? code;
     for (var hop = 0; hop < _maxHops; hop++) {
       step.name = 'authorize hop $hop';
-      final challenge = _consentChallenge(Uri.parse(url));
+      final flow = _consentFlow(Uri.parse(url));
       final String location;
-      if (challenge != null) {
+      if (flow != null) {
         step.name = 'consent accept';
-        location = await _acceptConsent(challenge, step);
+        location = await _acceptConsent(flow, step);
       } else {
         final r = await _dio.get(
           url,
@@ -257,23 +242,25 @@ class HeadlessLogin {
     return tokens;
   }
 
-  /// The `consent_challenge` if [url] is slauth's consent page, the SPA route
-  /// its consent provider sends first-party custom-scheme clients to under
-  /// `AUTH_MODE=native`. The provider route `/oauth/consent` carries the same
-  /// parameter and is an ordinary redirect, so the path must match exactly.
-  static String? _consentChallenge(Uri url) {
+  /// The `flow` handle if [url] is slauth's consent page, the SPA route its
+  /// consent provider sends first-party custom-scheme clients to. The provider
+  /// route `/oauth/consent` carries the same parameter and is an ordinary
+  /// redirect, so the path must match exactly.
+  static String? _consentFlow(Uri url) {
     if (url.path != '/consent') return null;
-    final challenge = url.queryParameters['consent_challenge'];
-    return challenge == null || challenge.isEmpty ? null : challenge;
+    final flow = url.queryParameters['flow'];
+    return flow == null || flow.isEmpty ? null : flow;
   }
 
-  /// Approve [challenge] the way the page's Continue button does: a JSON POST
-  /// with the session cookie, no Origin needed. Returns where to go next.
-  Future<String> _acceptConsent(String challenge, _Step step) async {
+  /// Approve [flow] the way the page's Continue button does: a JSON POST with
+  /// the session cookie and the auth UI's `Origin`, which slauth requires.
+  /// Returns where to go next.
+  Future<String> _acceptConsent(String flow, _Step step) async {
     final res = await _dio.post(
       '${config.baseUrl}/api/v1/oauth/consent/accept',
-      data: jsonEncode({'consent_challenge': challenge}),
+      data: jsonEncode({'flow': flow}),
       options: Options(
+        headers: {'Origin': _origin},
         contentType: Headers.jsonContentType,
         responseType: ResponseType.json,
       ),
@@ -365,19 +352,6 @@ class HeadlessLogin {
     throw HeadlessLoginException(
       '${step.name}: expected a JSON object, got ${value.runtimeType}',
     );
-  }
-
-  String _extractCsrf(Object? nodes) {
-    if (nodes is! List) return '';
-    for (final n in nodes) {
-      if (n is Map) {
-        final attrs = n['attributes'];
-        if (attrs is Map && attrs['name'] == 'csrf_token') {
-          return (attrs['value'] as String?) ?? '';
-        }
-      }
-    }
-    return '';
   }
 }
 

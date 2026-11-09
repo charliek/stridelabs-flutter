@@ -27,8 +27,7 @@ String _makeJwt(String sub) {
 }
 
 /// Replays the EXACT verified redirect chain from native_flow_probe.py:
-///   GET  /.ory/self-service/login/browser        -> 200 JSON (csrf node) + Set-Cookie
-///   POST /self-service/login?flow=...             -> 200 JSON session + Set-Cookie
+///   POST /api/v1/account/login                    -> 200 + Set-Cookie (403 without Origin)
 ///   GET  /oauth2/auth  (#1)                       -> 302 /oauth/login
 ///   GET  /oauth/login                             -> 302 `authorize url`
 ///   GET  /oauth2/auth  (#2)                       -> 302 /oauth/consent
@@ -36,34 +35,38 @@ String _makeJwt(String sub) {
 ///   GET  /oauth2/auth  (#3)                       -> 302 slaudio://auth/callback?code&state
 ///   POST /oauth2/token                            -> 200 JSON tokens
 ///
-/// With [screenChallenge], the chain slauth runs for a first-party custom-scheme
+/// With [screenFlow], the chain slauth runs for a first-party custom-scheme
 /// client under AUTH_MODE=native: `/oauth/consent` sends the browser to the SPA's
 /// `/consent` page instead of back to authorize, and only
 /// `POST /api/v1/oauth/consent/accept` moves the flow on.
 ///
-/// With [oryChallenge], the chain's real query under Ory: the provider route
-/// `/oauth/consent` carries a `consent_challenge` and auto-consents.
+/// Both POSTs answer 403 unless they carry the auth UI's `Origin` and a JSON
+/// content type, as slauth does.
+///
+/// With [providerFlow], the second authorize sends the browser to the provider
+/// route `/oauth/consent?flow=`, an ordinary redirect that is not the page.
 class _ReplayAdapter implements HttpClientAdapter {
   _ReplayAdapter({
     required this.redirectUri,
     this.callbackQuery,
-    this.screenChallenge,
-    this.oryChallenge,
+    this.screenFlow,
+    this.providerFlow,
     this.accept,
   });
 
   final String redirectUri;
 
-  /// The challenge the `/oauth/consent` hop sends to the SPA page with.
-  final String? screenChallenge;
+  /// The flow the `/oauth/consent` hop sends to the SPA page with.
+  final String? screenFlow;
 
-  /// The challenge the second authorize sends to `/oauth/consent` with.
-  final String? oryChallenge;
+  /// The flow the second authorize sends to `/oauth/consent` with.
+  final String? providerFlow;
 
   /// Overrides the accept answer. Given the URL the default redirects to.
   final ResponseBody Function(String redirectTo)? accept;
 
   final List<RequestOptions> acceptRequests = [];
+  final List<RequestOptions> loginRequests = [];
 
   /// Builds the callback query string from the observed `state`. Defaults to a
   /// valid `code`+matching-`state`. Override for the mismatch / error cases.
@@ -90,26 +93,13 @@ class _ReplayAdapter implements HttpClientAdapter {
     final cookie = options.headers['cookie'];
     if (cookie != null) cookieHeadersSeen.add('$cookie');
 
-    if (method == 'GET' && path.endsWith('/self-service/login/browser')) {
+    if (method == 'POST' && path == '/api/v1/account/login') {
+      final refusal = _refuseUnlessSameOrigin(options);
+      if (refusal != null) return refusal;
+      loginRequests.add(options);
       return _json(200, {
-        'ui': {
-          'action':
-              '${uri.scheme}://${uri.host}/self-service/login?flow=flow-1',
-          'nodes': [
-            {
-              'attributes': {'name': 'csrf_token', 'value': 'CSRF-TOKEN-123'},
-            },
-          ],
-        },
-      }, setCookie: 'csrf_token=abc; Path=/; HttpOnly');
-    }
-
-    if (method == 'POST' && path == '/self-service/login') {
-      return _json(200, {
-        'session': {
-          'identity': {'id': _identity},
-        },
-      }, setCookie: 'ory_session_local=SESSION-COOKIE; Path=/; HttpOnly');
+        'ok': true,
+      }, setCookie: 'slauth_session=SESSION-COOKIE; Path=/; HttpOnly');
     }
 
     if (method == 'GET' && path == '/oauth2/auth') {
@@ -120,9 +110,9 @@ class _ReplayAdapter implements HttpClientAdapter {
       }
       if (authHits == 2) {
         return _redirect(
-          oryChallenge == null
+          providerFlow == null
               ? '/oauth/consent'
-              : '/oauth/consent?consent_challenge=$oryChallenge',
+              : '/oauth/consent?flow=$providerFlow',
         );
       }
       final state = uri.queryParameters['state'] ?? '';
@@ -131,14 +121,12 @@ class _ReplayAdapter implements HttpClientAdapter {
       return _redirect('$redirectUri?$query');
     }
 
-    if (method == 'GET' &&
-        path == '/oauth/consent' &&
-        screenChallenge != null) {
+    if (method == 'GET' && path == '/oauth/consent' && screenFlow != null) {
       // Absolute, as slauth sends it (`AUTH_UI_URL` + `/consent?...`).
       return _redirect(
-        Uri.parse('https://auth.test/consent')
-            .replace(queryParameters: {'consent_challenge': screenChallenge})
-            .toString(),
+        Uri.parse(
+          'https://auth.test/consent',
+        ).replace(queryParameters: {'flow': screenFlow}).toString(),
       );
     }
 
@@ -159,6 +147,8 @@ class _ReplayAdapter implements HttpClientAdapter {
     }
 
     if (method == 'POST' && path == '/api/v1/oauth/consent/accept') {
+      final refusal = _refuseUnlessSameOrigin(options);
+      if (refusal != null) return refusal;
       acceptRequests.add(options);
       return accept?.call(_authorizeUrl!) ??
           _jsonResponse(200, {'redirect_to': _authorizeUrl});
@@ -175,6 +165,19 @@ class _ReplayAdapter implements HttpClientAdapter {
     }
 
     return _json(404, {'error': 'unexpected $method $path'});
+  }
+
+  /// slauth's gate on its JSON POSTs: the auth UI's exact `Origin`, and a JSON
+  /// body. Null when the request passes.
+  ResponseBody? _refuseUnlessSameOrigin(RequestOptions options) {
+    final origin = options.headers['Origin'] ?? options.headers['origin'];
+    if (origin != 'https://auth.test') {
+      return _jsonResponse(403, {'detail': 'Origin not allowed'});
+    }
+    if (!'${options.contentType}'.startsWith('application/json')) {
+      return _jsonResponse(403, {'detail': 'Content-Type must be JSON'});
+    }
+    return null;
   }
 
   ResponseBody _redirect(String location) => ResponseBody.fromString(
@@ -226,18 +229,21 @@ void main() {
       // Exactly three authorize hits (auth -> login -> auth -> consent -> auth).
       expect(adapter.authHits, 3);
 
-      // Session cookie from the Kratos login POST propagated to the authorize
+      // Session cookie from the login POST propagated to the authorize
       // requests via the CookieManager + jar.
       expect(
-        adapter.cookieHeadersSeen.any((c) => c.contains('ory_session_local')),
+        adapter.cookieHeadersSeen.any((c) => c.contains('slauth_session')),
         isTrue,
-        reason: 'authorize requests must carry the Kratos session cookie',
+        reason: 'authorize requests must carry the session cookie',
       );
 
       // Full observed sequence matches the probe.
+      expect(jsonDecode(adapter.loginRequests.single.data as String), {
+        'email': 'test@example.com',
+        'password': 'secret',
+      });
       expect(adapter.requestLog, [
-        'GET /.ory/self-service/login/browser',
-        'POST /self-service/login',
+        'POST /api/v1/account/login',
         'GET /oauth2/auth',
         'GET /oauth/login',
         'GET /oauth2/auth',
@@ -289,7 +295,7 @@ void main() {
 
   group('HeadlessLogin on the consent screen', () {
     // Needs percent-encoding in the page's URL, so a test sees it decoded.
-    const challenge = 'ch+al/len=ge';
+    const flowHandle = 'fl+ow/han=dle';
 
     Matcher failsWith(String message) => throwsA(
       isA<HeadlessLoginException>().having(
@@ -299,10 +305,10 @@ void main() {
       ),
     );
 
-    test('accepts the challenge and finishes with tokens', () async {
+    test('accepts the flow and finishes with tokens', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
       );
 
       final tokens = await _buildLogin(
@@ -312,8 +318,7 @@ void main() {
       expect(tokens['access_token'], isA<String>());
       expect(tokens['refresh_token'], 'refresh-token-1');
       expect(adapter.requestLog, [
-        'GET /.ory/self-service/login/browser',
-        'POST /self-service/login',
+        'POST /api/v1/account/login',
         'GET /oauth2/auth',
         'GET /oauth/login',
         'GET /oauth2/auth',
@@ -327,28 +332,27 @@ void main() {
     test('sends what slauth\'s accept requires', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
       );
 
       await _buildLogin(adapter).login(email: 'a@b', password: 'p');
 
       final request = adapter.acceptRequests.single;
       expect(request.uri.toString(), startsWith(_config.baseUrl));
-      expect(jsonDecode(request.data as String), {
-        'consent_challenge': challenge,
-      });
+      expect(jsonDecode(request.data as String), {'flow': flowHandle});
       expect(request.contentType, Headers.jsonContentType);
+      expect(request.headers['Origin'], 'https://auth.test');
       expect(
         '${request.headers['cookie']}',
-        contains('ory_session_local'),
-        reason: 'the challenge is bound to the session',
+        contains('slauth_session'),
+        reason: 'the flow is bound to the session',
       );
     });
 
     test('a redirect_to straight to the callback finishes the flow', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
         accept: (authorizeUrl) {
           final state = Uri.parse(authorizeUrl).queryParameters['state'];
           return _jsonResponse(200, {
@@ -368,7 +372,7 @@ void main() {
     test('a state mismatch after the accept is still refused', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
         accept: (_) => _jsonResponse(200, {
           'redirect_to': '${_config.redirectUri}?code=C&state=WRONG',
         }),
@@ -384,7 +388,7 @@ void main() {
       test('an accept answering $status fails, naming the status', () async {
         final adapter = _ReplayAdapter(
           redirectUri: _config.redirectUri,
-          screenChallenge: challenge,
+          screenFlow: flowHandle,
           accept: (_) => _jsonResponse(status, {'detail': 'refused'}),
         );
 
@@ -399,7 +403,7 @@ void main() {
     test('an accept answering 200 with no redirect_to fails', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
         accept: (_) => _jsonResponse(200, {'ok': true}),
       );
 
@@ -412,7 +416,7 @@ void main() {
     test('a client Dio that lets every status through still fails', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        screenChallenge: challenge,
+        screenFlow: flowHandle,
         accept: (_) =>
             _jsonResponse(403, {'redirect_to': 'https://auth.test/'}),
       );
@@ -429,11 +433,11 @@ void main() {
       );
     });
 
-    test('Ory\'s chain, with a challenge on the provider route, stays a chain '
-        'of redirects with no accept', () async {
+    test('a flow on the provider route stays a chain of redirects with no '
+        'accept', () async {
       final adapter = _ReplayAdapter(
         redirectUri: _config.redirectUri,
-        oryChallenge: challenge,
+        providerFlow: flowHandle,
       );
 
       final tokens = await _buildLogin(
@@ -443,8 +447,7 @@ void main() {
       expect(tokens['access_token'], isA<String>());
       expect(adapter.acceptRequests, isEmpty);
       expect(adapter.requestLog, [
-        'GET /.ory/self-service/login/browser',
-        'POST /self-service/login',
+        'POST /api/v1/account/login',
         'GET /oauth2/auth',
         'GET /oauth/login',
         'GET /oauth2/auth',
@@ -455,9 +458,10 @@ void main() {
     });
 
     for (final (name, location) in [
-      ('no challenge', '/consent'),
-      ('an empty challenge', '/consent?consent_challenge='),
-      ('another path', '/other/consent?consent_challenge=x'),
+      ('no flow', '/consent'),
+      ('an empty flow', '/consent?flow='),
+      ('the old challenge name', '/consent?consent_challenge=x'),
+      ('another path', '/other/consent?flow=x'),
     ]) {
       test('a hop with $name is not treated as the consent page', () async {
         final adapter = _PageAdapter(location);
