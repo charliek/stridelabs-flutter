@@ -108,7 +108,10 @@ class WebAuthOptions {
   static final _dnsHost = RegExp(
     r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
   );
-  static final _ipv4 = RegExp(r'^[0-9.]+$');
+  // The URL Standard parses a host as IPv4 when its last label is a number:
+  // decimal digits, or `0x` hex (so `0x7f.1` is 127.0.0.1). No DNS name ends
+  // in such a label, so refuse any host that does.
+  static final _numericLastLabel = RegExp(r'(^|\.)([0-9]+|0x[0-9a-f]*)$');
   static final _plainPath = RegExp(r'^(/[A-Za-z0-9._~-]+)+$');
 
   /// The host and path of an `https` [redirect], or null for another scheme.
@@ -133,7 +136,9 @@ class WebAuthOptions {
     if (host == 'localhost' || !_dnsHost.hasMatch(host)) {
       refuse('must name a lowercase DNS host (no trailing dot, not localhost)');
     }
-    if (_ipv4.hasMatch(host)) refuse('must not name an IP address');
+    if (_numericLastLabel.hasMatch(host)) {
+      refuse('must not name an IP address');
+    }
     if (path.contains('?')) refuse('must not carry a query');
     if (path.contains('#')) refuse('must not carry a fragment');
     if (!_plainPath.hasMatch(path) ||

@@ -9,14 +9,16 @@
   from it and keeps the base's other fields. For any other scheme it returns
   `base` itself, so the custom-scheme call is unchanged. An https redirect
   must be `https://` exactly, a lowercase DNS host of two or more labels (not
-  `localhost` or an IP, no port or userinfo) and a path of plain segments
+  `localhost` or an IP in any spelling a browser accepts, such as `0x7f.1`;
+  no port or userinfo) and a path of plain segments
   (no `.`/`..`, trailing `/`, query or fragment), which slauth's registry and
   an exact `android:path` both match byte for byte; otherwise it throws an
   `ArgumentError` naming the rule. It also refuses a base that already sets
   either value.
 - README: "Android App Link callback", the opt-in https setup (registration,
   options, the exact-path `CallbackActivity` filter, what not to declare, and
-  that a verified link needs Android 12 or later).
+  why to use it on Android 12 or later, where an unverified link no longer
+  falls back to a chooser).
 
 ### Changed
 - `FlutterWebAuth2Impl.authenticate` throws an `ArgumentError` when

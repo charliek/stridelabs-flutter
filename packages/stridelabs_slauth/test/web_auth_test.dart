@@ -180,6 +180,11 @@ void main() {
         'https://auth/callback',
         'https://localhost/callback',
         'https://127.0.0.1/callback',
+        // IPv4 spellings a browser normalizes (Codex review).
+        'https://0x7f.1/callback',
+        'https://127.1/callback',
+        'https://auth.example.0x10/callback',
+        'https://auth.example.123/callback',
         'https://user@auth.example.com/callback',
         'https://auth.example.com:8443/callback',
         // Forms Dart's Uri would normalize away (Codex review).

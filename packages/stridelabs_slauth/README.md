@@ -276,11 +276,12 @@ browsers the redirect leaves the Custom Tab as an App Link and reaches
 `CallbackActivity` through the filter above, which Android routes only to a
 verified app.
 
-**Needs Android 12 (API 31) or later for a verified link.** Before 12, a link
-whose verification failed or hasn't finished falls back to a chooser that
-lists every app declaring the filter, which is the screening a custom scheme
-gets from slauth anyway. Gate the https redirect to API 31+ (or set the app's
-`minSdk` to 31); this package's own `minSdk` is unchanged. Either way,
+**Use it on Android 12 (API 31) or later.** Android verifies App Links from
+API 23, but before 12 a link whose verification failed or hasn't finished
+still goes to a chooser listing every app that declares the filter, so
+another app could be offered the callback. From 12, an unverified https link
+opens in the browser instead. Gate the https redirect to API 31+ (or set the
+app's `minSdk` to 31); this package's own `minSdk` is unchanged. Either way,
 check the callback's scheme, host, path and `state` as you do for a custom
 scheme.
 
