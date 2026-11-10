@@ -63,7 +63,9 @@ class WebAuthOptions {
   /// [httpsPath] taken from the redirect when it is `https` (an Android App
   /// Link). For any other scheme (a custom scheme such as
   /// `myapp://auth/callback`) this returns [base] itself, so the
-  /// custom-scheme call is unchanged.
+  /// custom-scheme call is unchanged. Only `https` is special-cased: an
+  /// `http` redirect also returns [base] (slauth refuses http redirects on a
+  /// native client, so one can't be registered).
   ///
   /// An `https` redirect must name one exact callback that an
   /// `android:path` filter and slauth's registry both match byte for byte:
