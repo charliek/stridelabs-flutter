@@ -147,7 +147,8 @@ class HeadlessLogin {
     }
 
     // 2. Authorize with PKCE, following redirects manually until the
-    //    custom-scheme callback is reached.
+    //    callback (custom scheme or https) is reached.
+    final redirect = Uri.parse(config.redirectUri);
     final pkce = Pkce.generate();
     final state = Pkce.generateState();
     var url = buildAuthorizeUrl(
@@ -191,7 +192,7 @@ class HeadlessLogin {
         location = header;
       }
       url = Uri.parse(url).resolve(location).toString();
-      if (url.startsWith(config.redirectUri)) {
+      if (_isRedirect(Uri.parse(url), redirect)) {
         final q = Uri.parse(url).queryParameters;
         final error = q['error'];
         if (error != null) {
@@ -354,6 +355,15 @@ class HeadlessLogin {
     );
   }
 }
+
+/// Whether [url] is the callback [redirect]: the same scheme, host, port and
+/// path, whatever its query. Not a prefix match, so a sibling path such as
+/// `/callback-other` is followed as a hop rather than taken as the callback.
+bool _isRedirect(Uri url, Uri redirect) =>
+    url.scheme == redirect.scheme &&
+    url.host == redirect.host &&
+    url.port == redirect.port &&
+    url.path == redirect.path;
 
 /// The request a flow is on, for [HeadlessLoginException] messages.
 class _Step {

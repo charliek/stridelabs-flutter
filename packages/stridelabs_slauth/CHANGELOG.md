@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.0 - 2026-11-10
+
+### Added
+- `WebAuthOptions.forRedirect(String redirectUri, {base})` builds the
+  browser options for a sign-in from the exact `redirect_uri` string. For an
+  https redirect (an Android App Link) it sets `httpsHost` and `httpsPath`
+  from it and keeps the base's other fields. For any other scheme it returns
+  `base` itself, so the custom-scheme call is unchanged. An https redirect
+  must be `https://` exactly, a lowercase DNS host of two or more labels (not
+  `localhost` or an IP in any spelling a browser accepts, such as `0x7f.1`;
+  no port or userinfo) and a path of plain segments
+  (no `.`/`..`, trailing `/`, query or fragment), which slauth's registry and
+  an exact `android:path` both match byte for byte; otherwise it throws an
+  `ArgumentError` naming the rule. It also refuses a base that already sets
+  either value.
+- README: "Android App Link callback", the opt-in https setup (registration,
+  options, the exact-path `CallbackActivity` filter, what not to declare, and
+  why to use it on Android 12 or later, where an unverified link no longer
+  falls back to a chooser, and that the callback completed only through an
+  Auth Tab in our emulator checks).
+
+### Changed
+- On Android, iOS and macOS, `FlutterWebAuth2Impl.authenticate` throws an
+  `ArgumentError` when `callbackUrlScheme` is `https` but `httpsHost` or
+  `httpsPath` is missing, before calling the plugin. On Android that call
+  never worked (the plugin launched `https` as a custom scheme and the
+  callback never came back). Linux, Windows and web, where the desktop
+  webview can match an https callback by host alone, are unchanged, and so
+  are custom-scheme calls everywhere.
+- `HeadlessLogin` (debug-only) recognizes the callback by an exact scheme,
+  host, port and path match instead of a string prefix, so it stops at an
+  https callback without requesting it and follows a sibling path such as
+  `/callback-other` as an ordinary hop.
+
 ## 0.3.0 - 2026-11-09
 
 ### Changed

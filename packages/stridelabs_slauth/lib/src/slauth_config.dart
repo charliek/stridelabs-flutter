@@ -30,11 +30,15 @@ class SlauthConfig extends AuthConfig {
   /// [clientId]; see the class doc.
   final String audience;
 
-  /// OAuth redirect URI (custom scheme) registered for this client.
+  /// OAuth redirect URI registered for this client: a custom scheme, or a
+  /// claimed https callback (an Android App Link; see the README's "Android
+  /// App Link callback"). The token exchange sends the same value.
   @override
   final String redirectUri;
 
-  /// Post-logout redirect URI (custom scheme) for RP-initiated logout.
+  /// Post-logout redirect URI for RP-initiated logout. Keep it on a custom
+  /// scheme even when [redirectUri] is https: [WebAuthOptions.forRedirect]
+  /// derives the https host and path from the sign-in redirect only.
   final String postLogoutUri;
 
   /// OAuth2 scope. `offline_access` is required for slauth to issue a refresh

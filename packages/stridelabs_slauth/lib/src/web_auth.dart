@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
 import 'loopback_web_auth.dart' show LoopbackWebAuth;
@@ -56,8 +58,99 @@ class WebAuthOptions {
       debugOrigin = null,
       silentAuth = null;
 
+  /// The options for a sign-in that returns to [redirectUri], the exact
+  /// string the app sends as `redirect_uri`: [base], plus [httpsHost] and
+  /// [httpsPath] taken from the redirect when it is `https` (an Android App
+  /// Link). For any other scheme (a custom scheme such as
+  /// `myapp://auth/callback`) this returns [base] itself, so the
+  /// custom-scheme call is unchanged. Only `https` is special-cased: an
+  /// `http` redirect also returns [base] (slauth refuses http redirects on a
+  /// native client, so one can't be registered).
+  ///
+  /// An `https` redirect must name one exact callback that an
+  /// `android:path` filter and slauth's registry both match byte for byte:
+  /// - `https://` exactly (lowercase) as written;
+  /// - a lowercase DNS host of two or more labels: no trailing dot, port or
+  ///   userinfo, not `localhost` and not an IP address;
+  /// - a path of one or more plain segments (`A-Z a-z 0-9 . _ ~ -`), none of
+  ///   them `.` or `..`, and no trailing `/`, query or fragment.
+  ///
+  /// Throws an [ArgumentError] naming the rule (never the value) when it
+  /// doesn't, and when [base] already sets [httpsHost] or [httpsPath], which
+  /// come from the redirect alone.
+  factory WebAuthOptions.forRedirect(
+    String redirectUri, {
+    WebAuthOptions base = WebAuthOptions.defaults,
+  }) {
+    final callback = _httpsCallback(redirectUri);
+    if (callback == null) return base;
+    final (host, path) = callback;
+    if (base.httpsHost != null || base.httpsPath != null) {
+      throw ArgumentError(
+        'httpsHost and httpsPath come from the redirect; leave them unset',
+        'base',
+      );
+    }
+    return WebAuthOptions(
+      preferEphemeral: base.preferEphemeral,
+      useWebview: base.useWebview,
+      timeout: base.timeout,
+      httpsHost: host,
+      httpsPath: path,
+      intentFlags: base.intentFlags,
+      customTabsPackageOrder: base.customTabsPackageOrder,
+      landingPageHtml: base.landingPageHtml,
+      windowName: base.windowName,
+      debugOrigin: base.debugOrigin,
+      silentAuth: base.silentAuth,
+    );
+  }
+
   /// Every field unset: the plugin's own defaults.
   static const defaults = WebAuthOptions._defaults();
+
+  static final _dnsHost = RegExp(
+    r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+  );
+  // The URL Standard parses a host as IPv4 when its last label is a number:
+  // decimal digits, or `0x` hex (so `0x7f.1` is 127.0.0.1). No DNS name ends
+  // in such a label, so refuse any host that does.
+  static final _numericLastLabel = RegExp(r'(^|\.)([0-9]+|0x[0-9a-f]*)$');
+  static final _plainPath = RegExp(r'^(/[A-Za-z0-9._~-]+)+$');
+
+  /// The host and path of an `https` [redirect], or null for another scheme.
+  /// Throws for an `https` redirect [forRedirect]'s rules refuse.
+  static (String, String)? _httpsCallback(String redirect) {
+    final scheme = redirect.indexOf(':');
+    if (scheme < 0 || redirect.substring(0, scheme).toLowerCase() != 'https') {
+      return null;
+    }
+    Never refuse(String why) =>
+        throw ArgumentError('an https callback $why', 'redirectUri');
+    const prefix = 'https://';
+    if (!redirect.startsWith(prefix)) {
+      refuse('must start with exactly "https://"');
+    }
+    final rest = redirect.substring(prefix.length);
+    final slash = rest.indexOf('/');
+    final host = slash < 0 ? rest : rest.substring(0, slash);
+    final path = slash < 0 ? '' : rest.substring(slash);
+    if (host.contains('@')) refuse('must not carry userinfo');
+    if (host.contains(':')) refuse('must not name a port');
+    if (host == 'localhost' || !_dnsHost.hasMatch(host)) {
+      refuse('must name a lowercase DNS host (no trailing dot, not localhost)');
+    }
+    if (_numericLastLabel.hasMatch(host)) {
+      refuse('must not name an IP address');
+    }
+    if (path.contains('?')) refuse('must not carry a query');
+    if (path.contains('#')) refuse('must not carry a fragment');
+    if (!_plainPath.hasMatch(path) ||
+        path.split('/').any((s) => s == '.' || s == '..')) {
+      refuse('must have a path of plain segments, with no trailing "/"');
+    }
+    return (host, path);
+  }
 
   /// iOS, macOS, Android: use an ephemeral browser session (no shared cookies)
   /// where possible. Plugin default: false.
@@ -123,6 +216,16 @@ class WebAuthOptions {
             Duration.microsecondsPerSecond;
 }
 
+/// The platforms whose `flutter_web_auth_2` https callback needs both
+/// `httpsHost` and `httpsPath`.
+bool get _needsHttpsHostAndPath =>
+    !kIsWeb &&
+    const {
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+    }.contains(defaultTargetPlatform);
+
 /// Production implementation backed by `flutter_web_auth_2`: opens the OS
 /// "secure browser" (`ASWebAuthenticationSession` on iOS/macOS, Chrome Custom
 /// Tabs on Android) and returns the callback URI.
@@ -142,11 +245,29 @@ class FlutterWebAuth2Impl implements WebAuth {
 
   final WebAuthOptions options;
 
+  /// On Android, iOS and macOS, throws an [ArgumentError] when
+  /// [callbackUrlScheme] is `https` and [options] lacks
+  /// [WebAuthOptions.httpsHost] or [WebAuthOptions.httpsPath] (build them
+  /// with [WebAuthOptions.forRedirect]). Those platforms need both: without
+  /// them, the plugin's Android side launches the sign-in as if `https` were
+  /// a custom scheme and the callback never returns. Linux, Windows and web
+  /// are unchanged (the desktop webview can match an https callback by host
+  /// alone).
   @override
   Future<Uri> authenticate({
     required Uri url,
     required String callbackUrlScheme,
   }) async {
+    if (_needsHttpsHostAndPath &&
+        callbackUrlScheme.toLowerCase() == 'https' &&
+        ((options.httpsHost ?? '').isEmpty ||
+            (options.httpsPath ?? '').isEmpty)) {
+      throw ArgumentError(
+        'an https callback needs httpsHost and httpsPath '
+            '(use WebAuthOptions.forRedirect)',
+        'options',
+      );
+    }
     final result = await FlutterWebAuth2.authenticate(
       url: url.toString(),
       callbackUrlScheme: callbackUrlScheme,

@@ -205,11 +205,23 @@ ResponseBody _jsonResponse(int status, Object data) => ResponseBody.fromString(
   },
 );
 
-HeadlessLogin _buildLogin(_ReplayAdapter adapter) {
+HeadlessLogin _buildLogin(
+  _ReplayAdapter adapter, {
+  SlauthConfig config = _config,
+}) {
   final dio = Dio(BaseOptions(validateStatus: (s) => s != null && s < 400))
     ..httpClientAdapter = adapter;
-  return HeadlessLogin(config: _config, dio: dio, cookieJar: CookieJar());
+  return HeadlessLogin(config: config, dio: dio, cookieJar: CookieJar());
 }
+
+/// A client whose redirect is a claimed https callback on the auth domain.
+const _httpsConfig = SlauthConfig(
+  baseUrl: 'https://auth.test',
+  clientId: 'slaudio-mobile',
+  audience: 'slaudio',
+  redirectUri: 'https://auth.test/app/slaudio/callback',
+  postLogoutUri: 'slaudio://auth/logout',
+);
 
 void main() {
   group('HeadlessLogin', () {
@@ -251,6 +263,42 @@ void main() {
         'GET /oauth2/auth',
         'POST /oauth2/token',
       ]);
+    });
+
+    test('stops at an https callback without requesting it', () async {
+      final adapter = _ReplayAdapter(redirectUri: _httpsConfig.redirectUri);
+      final login = _buildLogin(adapter, config: _httpsConfig);
+
+      final tokens = await login.login(
+        email: 'test@example.com',
+        password: 'secret',
+      );
+
+      expect(tokens['refresh_token'], 'refresh-token-1');
+      expect(adapter.requestLog, [
+        'POST /api/v1/account/login',
+        'GET /oauth2/auth',
+        'GET /oauth/login',
+        'GET /oauth2/auth',
+        'GET /oauth/consent',
+        'GET /oauth2/auth',
+        'POST /oauth2/token',
+      ]);
+    });
+
+    test('a sibling of the callback path is a hop, not the callback', () async {
+      // `startsWith` would take `/callback-other?code=...` as the callback.
+      final adapter = _ReplayAdapter(
+        redirectUri: '${_httpsConfig.redirectUri}-other',
+      );
+      final login = _buildLogin(adapter, config: _httpsConfig);
+
+      await expectLater(
+        login.login(email: 'test@example.com', password: 'secret'),
+        throwsA(isA<HeadlessLoginException>()),
+      );
+      expect(adapter.requestLog, contains('GET /app/slaudio/callback-other'));
+      expect(adapter.requestLog, isNot(contains('POST /oauth2/token')));
     });
 
     test('rejects a state mismatch on the callback', () async {
