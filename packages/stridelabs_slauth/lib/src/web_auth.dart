@@ -56,6 +56,65 @@ class WebAuthOptions {
       debugOrigin = null,
       silentAuth = null;
 
+  /// The options for a sign-in that returns to [redirectUri]: [base], plus
+  /// [httpsHost] and [httpsPath] taken from the redirect when it is `https`
+  /// (an Android App Link or another claimed https callback). For any other
+  /// scheme (a custom scheme such as `myapp://auth/callback`) this returns
+  /// [base] itself, so the custom-scheme call is unchanged.
+  ///
+  /// Throws an [ArgumentError] when an `https` redirect can't name one exact
+  /// callback: no host, a host with a trailing dot, userinfo, an explicit
+  /// port, a query, a fragment, or a path that is empty or just `/`. It also
+  /// throws when [base] already sets [httpsHost] or [httpsPath], because the
+  /// redirect is their only source.
+  factory WebAuthOptions.forRedirect(
+    Uri redirectUri, {
+    WebAuthOptions base = WebAuthOptions.defaults,
+  }) {
+    if (!redirectUri.isScheme('https')) return base;
+    String? problem;
+    if (redirectUri.host.isEmpty) {
+      problem = 'has no host';
+    } else if (redirectUri.host.endsWith('.')) {
+      problem = 'has a host ending in a dot';
+    } else if (redirectUri.userInfo.isNotEmpty) {
+      problem = 'carries userinfo';
+    } else if (redirectUri.hasPort) {
+      problem = 'names a port';
+    } else if (redirectUri.hasQuery) {
+      problem = 'carries a query';
+    } else if (redirectUri.hasFragment) {
+      problem = 'carries a fragment';
+    } else if (redirectUri.path.length < 2 ||
+        !redirectUri.path.startsWith('/')) {
+      problem = 'needs a path other than "/"';
+    }
+    if (problem != null) {
+      // The redirect is config, not a secret, but keep it out of the message
+      // anyway: the reason is enough to fix it.
+      throw ArgumentError('an https callback $problem', 'redirectUri');
+    }
+    if (base.httpsHost != null || base.httpsPath != null) {
+      throw ArgumentError(
+        'httpsHost and httpsPath come from the redirect; leave them unset',
+        'base',
+      );
+    }
+    return WebAuthOptions(
+      preferEphemeral: base.preferEphemeral,
+      useWebview: base.useWebview,
+      timeout: base.timeout,
+      httpsHost: redirectUri.host,
+      httpsPath: redirectUri.path,
+      intentFlags: base.intentFlags,
+      customTabsPackageOrder: base.customTabsPackageOrder,
+      landingPageHtml: base.landingPageHtml,
+      windowName: base.windowName,
+      debugOrigin: base.debugOrigin,
+      silentAuth: base.silentAuth,
+    );
+  }
+
   /// Every field unset: the plugin's own defaults.
   static const defaults = WebAuthOptions._defaults();
 
@@ -142,11 +201,25 @@ class FlutterWebAuth2Impl implements WebAuth {
 
   final WebAuthOptions options;
 
+  /// Throws an [ArgumentError] when [callbackUrlScheme] is `https` and
+  /// [options] lacks [WebAuthOptions.httpsHost] or [WebAuthOptions.httpsPath]
+  /// (build them with [WebAuthOptions.forRedirect]). Without both, the
+  /// plugin's Android side launches the sign-in as if `https` were a custom
+  /// scheme, and the callback never returns.
   @override
   Future<Uri> authenticate({
     required Uri url,
     required String callbackUrlScheme,
   }) async {
+    if (callbackUrlScheme.toLowerCase() == 'https' &&
+        ((options.httpsHost ?? '').isEmpty ||
+            (options.httpsPath ?? '').isEmpty)) {
+      throw ArgumentError(
+        'an https callback needs httpsHost and httpsPath '
+            '(use WebAuthOptions.forRedirect)',
+        'options',
+      );
+    }
     final result = await FlutterWebAuth2.authenticate(
       url: url.toString(),
       callbackUrlScheme: callbackUrlScheme,

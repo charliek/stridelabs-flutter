@@ -209,6 +209,76 @@ the `const WebAuthOptions.defaults`) makes the same call as before. The
 The plugin takes whole seconds, so a fractional timeout is rounded up
 (500 ms becomes 1 s), never down to zero.
 
+## Android App Link callback (https, opt-in)
+
+By default the callback is a custom scheme (`myapp://auth/callback`), which
+any installed app can also claim, so slauth screens it with a consent page on
+every sign-in. An https redirect that Android verifies as the app's App Link
+can't be claimed by another app, so slauth can let it through silently. Opt
+in per build; nothing changes for an app that keeps its custom scheme.
+
+1. **Register** the https redirect for the client in slauth (its `app_links`
+   block), and publish `/.well-known/assetlinks.json` on the link's host
+   naming the package and each signing certificate's SHA-256.
+2. **Sign in with it.** Set `redirectUri` to the link, and build the browser
+   options from it:
+   ```dart
+   final redirect = Uri.parse(config.redirectUri); // https://host/app/myapp/callback
+   final webAuth = FlutterWebAuth2Impl(
+     options: WebAuthOptions.forRedirect(redirect),
+   );
+   await webAuth.authenticate(
+     url: config.authorizeUrl(codeChallenge: challenge, state: state),
+     callbackUrlScheme: config.callbackUrlScheme, // 'https'
+   );
+   ```
+   `forRedirect` sets `httpsHost` and `httpsPath` from an https redirect and
+   returns the base options unchanged for any other scheme, so one code path
+   serves both builds. It refuses an https redirect with no host, a trailing
+   dot, userinfo, a port, a query, a fragment, or no path beyond `/`.
+   `FlutterWebAuth2Impl` refuses an `https` `callbackUrlScheme` without both
+   values; the plugin would otherwise launch `https` as a custom scheme and
+   never return.
+3. **Declare the filter** on the plugin's `CallbackActivity`, in its own
+   `<intent-filter>`, beside the custom-scheme one:
+   ```xml
+   <activity
+       android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+       android:exported="true">
+     <intent-filter android:label="flutter_web_auth_2">
+       <action android:name="android.intent.action.VIEW" />
+       <category android:name="android.intent.category.DEFAULT" />
+       <category android:name="android.intent.category.BROWSABLE" />
+       <data android:scheme="myapp" android:host="auth" android:path="/callback" />
+     </intent-filter>
+     <intent-filter android:autoVerify="true">
+       <action android:name="android.intent.action.VIEW" />
+       <category android:name="android.intent.category.DEFAULT" />
+       <category android:name="android.intent.category.BROWSABLE" />
+       <data android:scheme="https" android:host="auth.example.com"
+             android:path="/app/myapp/callback" />
+     </intent-filter>
+   </activity>
+   ```
+   Name the exact callback with `android:path`. **Never** `pathPrefix`,
+   `pathPattern` or a host-only filter: on a shared host (the auth domain) a
+   broader filter would also capture its password-recovery and verification
+   mail links. Don't add the plugin's optional `ACTION_SEND` text/plain filter
+   either: it lets any app hand `CallbackActivity` a callback URL.
+
+How the callback comes back: in a browser with Auth Tab support (androidx
+browser 1.9's `AuthTabIntent`), the browser itself checks the app's link and
+returns the redirect to the plugin; a failed check fails the sign-in. In other
+browsers the redirect leaves the Custom Tab as an App Link and reaches
+`CallbackActivity` through the filter above, which Android only routes to a
+verified app (API 31+; older versions may show a chooser). Either way,
+check the callback's scheme, host, path and `state` as you do for a custom
+scheme.
+
+Keep `postLogoutUri` on the custom scheme: logout has no consent step, and
+`forRedirect` only describes the sign-in redirect. Desktop and iOS keep the
+custom scheme (`LoopbackWebAuth` below for desktop).
+
 ## Desktop: `LoopbackWebAuth` (opt-in)
 
 On desktop, `flutter_web_auth_2` has no OS secure browser. Its default is an

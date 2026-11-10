@@ -6,6 +6,7 @@ import 'package:stridelabs_slauth/stridelabs_slauth.dart';
 /// Records what `FlutterWebAuth2.authenticate` hands the platform.
 class _RecordingPlatform extends FlutterWebAuth2Platform {
   final calls = <({String url, String scheme, Map<String, dynamic> options})>[];
+  String result = 'myapp://auth/callback?code=c&state=s';
 
   @override
   Future<String> authenticate({
@@ -14,7 +15,7 @@ class _RecordingPlatform extends FlutterWebAuth2Platform {
     required Map<String, dynamic> options,
   }) async {
     calls.add((url: url, scheme: callbackUrlScheme, options: options));
-    return 'myapp://auth/callback?code=c&state=s';
+    return result;
   }
 
   @override
@@ -125,6 +126,126 @@ void main() {
         reason: '$bad',
       );
     }
+  });
+
+  group('WebAuthOptions.forRedirect', () {
+    test('a custom-scheme redirect returns the base itself', () {
+      final base = WebAuthOptions(preferEphemeral: true);
+      expect(
+        identical(
+          WebAuthOptions.forRedirect(
+            Uri.parse('myapp://auth/callback'),
+            base: base,
+          ),
+          base,
+        ),
+        isTrue,
+      );
+      expect(
+        identical(
+          WebAuthOptions.forRedirect(Uri.parse('myapp://auth/callback')),
+          WebAuthOptions.defaults,
+        ),
+        isTrue,
+      );
+    });
+
+    test('an https redirect sets httpsHost and httpsPath and keeps the rest '
+        'of the base', () {
+      final options = WebAuthOptions.forRedirect(
+        Uri.parse('https://auth.example.com/app/myapp/callback'),
+        base: WebAuthOptions(
+          preferEphemeral: true,
+          timeout: const Duration(seconds: 30),
+          customTabsPackageOrder: const ['com.android.chrome'],
+        ),
+      );
+      expect(options.toPluginOptions().toJson(), {
+        ...const FlutterWebAuth2Options().toJson(),
+        'preferEphemeral': true,
+        'timeout': 30,
+        'customTabsPackageOrder': ['com.android.chrome'],
+        'httpsHost': 'auth.example.com',
+        'httpsPath': '/app/myapp/callback',
+      });
+    });
+
+    test('refuses an https redirect that names no exact callback', () {
+      for (final bad in [
+        'https:///callback',
+        'https://auth.example.com',
+        'https://auth.example.com/',
+        'https://auth.example.com./callback',
+        'https://user@auth.example.com/callback',
+        'https://auth.example.com:8443/callback',
+        'https://auth.example.com/callback?x=1',
+        'https://auth.example.com/callback#f',
+      ]) {
+        expect(
+          () => WebAuthOptions.forRedirect(Uri.parse(bad)),
+          throwsA(
+            isA<ArgumentError>()
+                .having((e) => e.name, 'name', 'redirectUri')
+                .having((e) => '${e.message}', 'message', isNot(contains(bad))),
+          ),
+          reason: bad,
+        );
+      }
+    });
+
+    test('refuses a base that already sets httpsHost or httpsPath', () {
+      for (final base in [
+        WebAuthOptions(httpsHost: 'auth.example.com'),
+        WebAuthOptions(httpsPath: '/callback'),
+      ]) {
+        expect(
+          () => WebAuthOptions.forRedirect(
+            Uri.parse('https://auth.example.com/callback'),
+            base: base,
+          ),
+          throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'base')),
+        );
+      }
+    });
+
+    test(
+      'an https sign-in reaches the plugin with its host and path',
+      () async {
+        const redirect = 'https://auth.example.com/app/myapp/callback';
+        platform.result = '$redirect?code=c&state=s';
+        final result = await FlutterWebAuth2Impl(
+          options: WebAuthOptions.forRedirect(Uri.parse(redirect)),
+        ).authenticate(url: _url, callbackUrlScheme: 'https');
+
+        expect(result, Uri.parse('$redirect?code=c&state=s'));
+        final call = platform.calls.single;
+        expect(call.scheme, 'https');
+        expect(call.options['httpsHost'], 'auth.example.com');
+        expect(call.options['httpsPath'], '/app/myapp/callback');
+      },
+    );
+  });
+
+  test('an https callback without httpsHost or httpsPath is refused before '
+      'the plugin is called', () async {
+    for (final options in [
+      WebAuthOptions.defaults,
+      WebAuthOptions(httpsHost: 'auth.example.com'),
+      WebAuthOptions(httpsPath: '/callback'),
+      WebAuthOptions(httpsHost: '', httpsPath: '/callback'),
+    ]) {
+      for (final scheme in ['https', 'HTTPS']) {
+        await expectLater(
+          FlutterWebAuth2Impl(
+            options: options,
+          ).authenticate(url: _url, callbackUrlScheme: scheme),
+          throwsA(
+            isA<ArgumentError>().having((e) => e.name, 'name', 'options'),
+          ),
+        );
+      }
+    }
+    expect(platform.calls, isEmpty);
   });
 
   test('a fake on the original WebAuth signature still works', () async {

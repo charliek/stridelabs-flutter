@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 - 2026-11-09
+
+### Added
+- `WebAuthOptions.forRedirect(redirectUri, {base})` builds the browser
+  options for a sign-in from its redirect. For an https redirect (an Android
+  App Link) it sets `httpsHost` and `httpsPath` from the redirect and keeps
+  the base's other fields. For any other scheme it returns `base` itself, so
+  the custom-scheme call is unchanged. It refuses an https redirect that names
+  no exact callback (no host, a trailing dot, userinfo, a port, a query, a
+  fragment, or no path beyond `/`) and a base that already sets either value.
+- README: "Android App Link callback", the opt-in https setup (registration,
+  options, the exact-path `CallbackActivity` filter, what not to declare).
+
+### Changed
+- `FlutterWebAuth2Impl.authenticate` throws an `ArgumentError` when
+  `callbackUrlScheme` is `https` but `httpsHost` or `httpsPath` is missing,
+  before calling the plugin. That call never worked (the plugin launched
+  `https` as a custom scheme and the callback never came back); custom-scheme
+  calls are unchanged.
+- `HeadlessLogin` (debug-only) recognizes the callback by an exact scheme,
+  host, port and path match instead of a string prefix, so it stops at an
+  https callback without requesting it and follows a sibling path such as
+  `/callback-other` as an ordinary hop.
+
 ## 0.3.0 - 2026-11-09
 
 ### Changed

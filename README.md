@@ -7,7 +7,7 @@ slaudio mobile app so multiple apps can depend on one implementation.
 
 | Package | What it is |
 | --- | --- |
-| [`packages/stridelabs_slauth`](packages/stridelabs_slauth) | OAuth2 PKCE client, slauth (Ory Hydra + Kratos) by default and any provider via a pluggable `TokenEndpoint` and `AuthConfig`: system-browser login (plus an opt-in desktop sign-in through the default browser and a loopback redirect), token exchange, refresh with rotation, at-rest token storage (keychain on mobile, `0600` files on desktop), and a debug-only headless password login for local E2E driving. See its [README](packages/stridelabs_slauth/README.md). |
+| [`packages/stridelabs_slauth`](packages/stridelabs_slauth) | OAuth2 PKCE client, slauth (Ory Hydra + Kratos) by default and any provider via a pluggable `TokenEndpoint` and `AuthConfig`: system-browser login (plus an opt-in Android App Link (https) callback and an opt-in desktop sign-in through the default browser and a loopback redirect), token exchange, refresh with rotation, at-rest token storage (keychain on mobile, `0600` files on desktop), and a debug-only headless password login for local E2E driving. See its [README](packages/stridelabs_slauth/README.md). |
 | [`packages/stridelabs_drive`](packages/stridelabs_drive) | Debug-only agent-driving helpers built on [Marionette](https://pub.dev/packages/marionette_flutter): binding bootstrap, `flutter test` detection, and the greppable `MSTATE`/`MRESULT` drive-state log contract. Tree-shakes out of release builds. |
 | [`packages/stridelabs_logging`](packages/stridelabs_logging) | Namespaced app logging: a `debugPrint` wrapper that tags each line with a subsystem area (`[area] message`), plus a crash-sink seam for a future crash-reporting backend. |
 | [`packages/stridelabs_voice`](packages/stridelabs_voice) | The client side of the StrideLabs voice protocol: the relay transport (microphone to `GET /voice/stream`), its events, limits and close codes, the reply speaker and its TTS client (`POST /voice/tts`), the pinned `MVOICE` debug-line vocabulary, test fakes (`testing.dart`) and a debug WAV microphone (`wav_mic.dart`). Targets the crate's `PROTOCOL.md` revision 1. See its [README](packages/stridelabs_voice/README.md). |
@@ -19,7 +19,7 @@ dependencies pinned to a release tag, from the app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  stridelabs_slauth: {git: {url: https://github.com/charliek/stridelabs-flutter.git, ref: v0.2.1, path: packages/stridelabs_slauth}}
+  stridelabs_slauth: {git: {url: https://github.com/charliek/stridelabs-flutter.git, ref: v0.4.0, path: packages/stridelabs_slauth}}
 ```
 
 The repo is public, so use the `https` URL (no SSH key needed in CI or on a

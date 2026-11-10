@@ -37,8 +37,9 @@ abstract class AuthConfig {
   /// The OAuth2 client id this app is registered as.
   String get clientId;
 
-  /// The OAuth2 redirect URI (usually a custom scheme) registered for this
-  /// client. The token exchange must send the same value.
+  /// The OAuth2 redirect URI (usually a custom scheme; an https one for an
+  /// Android App Link) registered for this client. The token exchange must
+  /// send the same value.
   String get redirectUri;
 
   /// The URL scheme the system browser intercepts to return the callback to
