@@ -15,7 +15,8 @@
   `ArgumentError` naming the rule. It also refuses a base that already sets
   either value.
 - README: "Android App Link callback", the opt-in https setup (registration,
-  options, the exact-path `CallbackActivity` filter, what not to declare).
+  options, the exact-path `CallbackActivity` filter, what not to declare, and
+  that a verified link needs Android 12 or later).
 
 ### Changed
 - `FlutterWebAuth2Impl.authenticate` throws an `ArgumentError` when

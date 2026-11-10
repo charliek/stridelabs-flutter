@@ -273,8 +273,14 @@ How the callback comes back: in a browser with Auth Tab support (androidx
 browser 1.9's `AuthTabIntent`), the browser itself checks the app's link and
 returns the redirect to the plugin; a failed check fails the sign-in. In other
 browsers the redirect leaves the Custom Tab as an App Link and reaches
-`CallbackActivity` through the filter above, which Android only routes to a
-verified app (API 31+; older versions may show a chooser). Either way,
+`CallbackActivity` through the filter above, which Android routes only to a
+verified app.
+
+**Needs Android 12 (API 31) or later for a verified link.** Before 12, a link
+whose verification failed or hasn't finished falls back to a chooser that
+lists every app declaring the filter, which is the screening a custom scheme
+gets from slauth anyway. Gate the https redirect to API 31+ (or set the app's
+`minSdk` to 31); this package's own `minSdk` is unchanged. Either way,
 check the callback's scheme, host, path and `state` as you do for a custom
 scheme.
 
