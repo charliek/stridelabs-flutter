@@ -270,9 +270,10 @@ in per build; nothing changes for an app that keeps its custom scheme.
    either: it lets any app hand `CallbackActivity` a callback URL.
 
 How the callback comes back:
-- **Auth Tab** (androidx browser 1.9's `AuthTabIntent`; the Chrome 133 we
-  tested took this path, which is an observation, not a version floor): the browser returns the redirect to the plugin only
-  when the link is verified for the app. Either Android has verified the
+- **Auth Tab** (androidx browser 1.9's `AuthTabIntent`). The Chrome 133 we
+  tested took this path; that is an observation, not a version floor. The
+  browser returns the redirect to the plugin only when the link is verified
+  for the app. Either Android has verified the
   domain for it, or the browser's own Digital Asset Links check (it fetches
   `assetlinks.json` from the link's host) matches the app's package and
   signing certificate. Otherwise the sign-in fails (`PlatformException` code

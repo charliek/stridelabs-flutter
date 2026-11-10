@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - 2026-11-09
+## 0.4.0 - 2026-11-10
 
 ### Added
 - `WebAuthOptions.forRedirect(String redirectUri, {base})` builds the
