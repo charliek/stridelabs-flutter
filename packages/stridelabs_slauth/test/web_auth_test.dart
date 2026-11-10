@@ -133,17 +133,14 @@ void main() {
       final base = WebAuthOptions(preferEphemeral: true);
       expect(
         identical(
-          WebAuthOptions.forRedirect(
-            Uri.parse('myapp://auth/callback'),
-            base: base,
-          ),
+          WebAuthOptions.forRedirect('myapp://auth/callback', base: base),
           base,
         ),
         isTrue,
       );
       expect(
         identical(
-          WebAuthOptions.forRedirect(Uri.parse('myapp://auth/callback')),
+          WebAuthOptions.forRedirect('myapp://auth/callback'),
           WebAuthOptions.defaults,
         ),
         isTrue,
@@ -153,7 +150,7 @@ void main() {
     test('an https redirect sets httpsHost and httpsPath and keeps the rest '
         'of the base', () {
       final options = WebAuthOptions.forRedirect(
-        Uri.parse('https://auth.example.com/app/myapp/callback'),
+        'https://auth.example.com/app/myapp/callback',
         base: WebAuthOptions(
           preferEphemeral: true,
           timeout: const Duration(seconds: 30),
@@ -172,17 +169,32 @@ void main() {
 
     test('refuses an https redirect that names no exact callback', () {
       for (final bad in [
+        'HTTPS://auth.example.com/callback',
+        'https:auth.example.com/callback',
         'https:///callback',
         'https://auth.example.com',
         'https://auth.example.com/',
+        'https://auth.example.com/callback/',
+        'https://Auth.example.com/callback',
         'https://auth.example.com./callback',
+        'https://auth/callback',
+        'https://localhost/callback',
+        'https://127.0.0.1/callback',
         'https://user@auth.example.com/callback',
         'https://auth.example.com:8443/callback',
+        // Forms Dart's Uri would normalize away (Codex review).
+        'https://auth.example.com:443/callback',
+        'https://@auth.example.com/callback',
         'https://auth.example.com/callback?x=1',
         'https://auth.example.com/callback#f',
+        'https://auth.example.com/app/../callback',
+        'https://auth.example.com/./callback',
+        'https://auth.example.com/call%62ack',
+        'https://auth.example.com/call*back',
+        'https://auth.example.com//callback',
       ]) {
         expect(
-          () => WebAuthOptions.forRedirect(Uri.parse(bad)),
+          () => WebAuthOptions.forRedirect(bad),
           throwsA(
             isA<ArgumentError>()
                 .having((e) => e.name, 'name', 'redirectUri')
@@ -193,6 +205,14 @@ void main() {
       }
     });
 
+    test('accepts plain multi-segment paths and hyphenated hosts', () {
+      final options = WebAuthOptions.forRedirect(
+        'https://auth-n9.local.example.com/app/my_app/call-back.v1~x',
+      );
+      expect(options.httpsHost, 'auth-n9.local.example.com');
+      expect(options.httpsPath, '/app/my_app/call-back.v1~x');
+    });
+
     test('refuses a base that already sets httpsHost or httpsPath', () {
       for (final base in [
         WebAuthOptions(httpsHost: 'auth.example.com'),
@@ -200,7 +220,7 @@ void main() {
       ]) {
         expect(
           () => WebAuthOptions.forRedirect(
-            Uri.parse('https://auth.example.com/callback'),
+            'https://auth.example.com/callback',
             base: base,
           ),
           throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'base')),
@@ -214,7 +234,7 @@ void main() {
         const redirect = 'https://auth.example.com/app/myapp/callback';
         platform.result = '$redirect?code=c&state=s';
         final result = await FlutterWebAuth2Impl(
-          options: WebAuthOptions.forRedirect(Uri.parse(redirect)),
+          options: WebAuthOptions.forRedirect(redirect),
         ).authenticate(url: _url, callbackUrlScheme: 'https');
 
         expect(result, Uri.parse('$redirect?code=c&state=s'));

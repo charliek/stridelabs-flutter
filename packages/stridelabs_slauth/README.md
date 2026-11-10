@@ -223,19 +223,22 @@ in per build; nothing changes for an app that keeps its custom scheme.
 2. **Sign in with it.** Set `redirectUri` to the link, and build the browser
    options from it:
    ```dart
-   final redirect = Uri.parse(config.redirectUri); // https://host/app/myapp/callback
    final webAuth = FlutterWebAuth2Impl(
-     options: WebAuthOptions.forRedirect(redirect),
+     // config.redirectUri: 'https://auth.example.com/app/myapp/callback'
+     options: WebAuthOptions.forRedirect(config.redirectUri),
    );
    await webAuth.authenticate(
      url: config.authorizeUrl(codeChallenge: challenge, state: state),
      callbackUrlScheme: config.callbackUrlScheme, // 'https'
    );
    ```
-   `forRedirect` sets `httpsHost` and `httpsPath` from an https redirect and
-   returns the base options unchanged for any other scheme, so one code path
-   serves both builds. It refuses an https redirect with no host, a trailing
-   dot, userinfo, a port, a query, a fragment, or no path beyond `/`.
+   `forRedirect` takes the exact string sent as `redirect_uri`. It sets
+   `httpsHost` and `httpsPath` from an https redirect and returns the base
+   options unchanged for any other scheme, so one code path serves both
+   builds. An https redirect must be `https://` exactly, a lowercase DNS host
+   (two or more labels, not `localhost` or an IP, no port or userinfo) and a
+   path of plain segments with no trailing `/`, query or fragment, so that the
+   `android:path` filter and slauth's registry match it byte for byte.
    `FlutterWebAuth2Impl` refuses an `https` `callbackUrlScheme` without both
    values; the plugin would otherwise launch `https` as a custom scheme and
    never return.

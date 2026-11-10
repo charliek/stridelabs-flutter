@@ -56,44 +56,31 @@ class WebAuthOptions {
       debugOrigin = null,
       silentAuth = null;
 
-  /// The options for a sign-in that returns to [redirectUri]: [base], plus
-  /// [httpsHost] and [httpsPath] taken from the redirect when it is `https`
-  /// (an Android App Link or another claimed https callback). For any other
-  /// scheme (a custom scheme such as `myapp://auth/callback`) this returns
-  /// [base] itself, so the custom-scheme call is unchanged.
+  /// The options for a sign-in that returns to [redirectUri], the exact
+  /// string the app sends as `redirect_uri`: [base], plus [httpsHost] and
+  /// [httpsPath] taken from the redirect when it is `https` (an Android App
+  /// Link). For any other scheme (a custom scheme such as
+  /// `myapp://auth/callback`) this returns [base] itself, so the
+  /// custom-scheme call is unchanged.
   ///
-  /// Throws an [ArgumentError] when an `https` redirect can't name one exact
-  /// callback: no host, a host with a trailing dot, userinfo, an explicit
-  /// port, a query, a fragment, or a path that is empty or just `/`. It also
-  /// throws when [base] already sets [httpsHost] or [httpsPath], because the
-  /// redirect is their only source.
+  /// An `https` redirect must name one exact callback that an
+  /// `android:path` filter and slauth's registry both match byte for byte:
+  /// - `https://` exactly (lowercase) as written;
+  /// - a lowercase DNS host of two or more labels: no trailing dot, port or
+  ///   userinfo, not `localhost` and not an IP address;
+  /// - a path of one or more plain segments (`A-Z a-z 0-9 . _ ~ -`), none of
+  ///   them `.` or `..`, and no trailing `/`, query or fragment.
+  ///
+  /// Throws an [ArgumentError] naming the rule (never the value) when it
+  /// doesn't, and when [base] already sets [httpsHost] or [httpsPath], which
+  /// come from the redirect alone.
   factory WebAuthOptions.forRedirect(
-    Uri redirectUri, {
+    String redirectUri, {
     WebAuthOptions base = WebAuthOptions.defaults,
   }) {
-    if (!redirectUri.isScheme('https')) return base;
-    String? problem;
-    if (redirectUri.host.isEmpty) {
-      problem = 'has no host';
-    } else if (redirectUri.host.endsWith('.')) {
-      problem = 'has a host ending in a dot';
-    } else if (redirectUri.userInfo.isNotEmpty) {
-      problem = 'carries userinfo';
-    } else if (redirectUri.hasPort) {
-      problem = 'names a port';
-    } else if (redirectUri.hasQuery) {
-      problem = 'carries a query';
-    } else if (redirectUri.hasFragment) {
-      problem = 'carries a fragment';
-    } else if (redirectUri.path.length < 2 ||
-        !redirectUri.path.startsWith('/')) {
-      problem = 'needs a path other than "/"';
-    }
-    if (problem != null) {
-      // The redirect is config, not a secret, but keep it out of the message
-      // anyway: the reason is enough to fix it.
-      throw ArgumentError('an https callback $problem', 'redirectUri');
-    }
+    final callback = _httpsCallback(redirectUri);
+    if (callback == null) return base;
+    final (host, path) = callback;
     if (base.httpsHost != null || base.httpsPath != null) {
       throw ArgumentError(
         'httpsHost and httpsPath come from the redirect; leave them unset',
@@ -104,8 +91,8 @@ class WebAuthOptions {
       preferEphemeral: base.preferEphemeral,
       useWebview: base.useWebview,
       timeout: base.timeout,
-      httpsHost: redirectUri.host,
-      httpsPath: redirectUri.path,
+      httpsHost: host,
+      httpsPath: path,
       intentFlags: base.intentFlags,
       customTabsPackageOrder: base.customTabsPackageOrder,
       landingPageHtml: base.landingPageHtml,
@@ -117,6 +104,44 @@ class WebAuthOptions {
 
   /// Every field unset: the plugin's own defaults.
   static const defaults = WebAuthOptions._defaults();
+
+  static final _dnsHost = RegExp(
+    r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+  );
+  static final _ipv4 = RegExp(r'^[0-9.]+$');
+  static final _plainPath = RegExp(r'^(/[A-Za-z0-9._~-]+)+$');
+
+  /// The host and path of an `https` [redirect], or null for another scheme.
+  /// Throws for an `https` redirect [forRedirect]'s rules refuse.
+  static (String, String)? _httpsCallback(String redirect) {
+    final scheme = redirect.indexOf(':');
+    if (scheme < 0 || redirect.substring(0, scheme).toLowerCase() != 'https') {
+      return null;
+    }
+    Never refuse(String why) =>
+        throw ArgumentError('an https callback $why', 'redirectUri');
+    const prefix = 'https://';
+    if (!redirect.startsWith(prefix)) {
+      refuse('must start with exactly "https://"');
+    }
+    final rest = redirect.substring(prefix.length);
+    final slash = rest.indexOf('/');
+    final host = slash < 0 ? rest : rest.substring(0, slash);
+    final path = slash < 0 ? '' : rest.substring(slash);
+    if (host.contains('@')) refuse('must not carry userinfo');
+    if (host.contains(':')) refuse('must not name a port');
+    if (host == 'localhost' || !_dnsHost.hasMatch(host)) {
+      refuse('must name a lowercase DNS host (no trailing dot, not localhost)');
+    }
+    if (_ipv4.hasMatch(host)) refuse('must not name an IP address');
+    if (path.contains('?')) refuse('must not carry a query');
+    if (path.contains('#')) refuse('must not carry a fragment');
+    if (!_plainPath.hasMatch(path) ||
+        path.split('/').any((s) => s == '.' || s == '..')) {
+      refuse('must have a path of plain segments, with no trailing "/"');
+    }
+    return (host, path);
+  }
 
   /// iOS, macOS, Android: use an ephemeral browser session (no shared cookies)
   /// where possible. Plugin default: false.
