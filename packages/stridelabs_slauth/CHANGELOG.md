@@ -18,7 +18,8 @@
 - README: "Android App Link callback", the opt-in https setup (registration,
   options, the exact-path `CallbackActivity` filter, what not to declare, and
   why to use it on Android 12 or later, where an unverified link no longer
-  falls back to a chooser).
+  falls back to a chooser, and that the callback completed only through an
+  Auth Tab in our emulator checks).
 
 ### Changed
 - On Android, iOS and macOS, `FlutterWebAuth2Impl.authenticate` throws an

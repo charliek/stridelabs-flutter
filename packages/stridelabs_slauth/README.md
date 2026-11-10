@@ -282,9 +282,12 @@ How the callback comes back:
   an App Link and reaches `CallbackActivity` through the filter above.
   Android routes it to the app when its domain verification succeeded, or
   when the user has turned on the domain for the app in its "Open by
-  default" settings, which bypasses verification. Whether a browser hands a
-  redirect with no user gesture (a live session answered by redirects only)
-  to the app at all varies by browser and version.
+  default" settings, which bypasses verification. **In our checks the
+  Custom Tab never handed the redirect back to the app that opened it**
+  (Chrome 91 on Android 12: silent and interactive, the auth host and
+  another host, the domain approved or not), so the sign-in stayed in the
+  browser. Treat Auth Tab support in the user's default browser as a
+  requirement for the https callback, and keep the custom scheme otherwise.
 
 **Use it on Android 12 (API 31) or later.** Android verifies App Links from
 API 23, but before 12 a link whose verification failed or hasn't finished
