@@ -21,11 +21,13 @@
   falls back to a chooser).
 
 ### Changed
-- `FlutterWebAuth2Impl.authenticate` throws an `ArgumentError` when
-  `callbackUrlScheme` is `https` but `httpsHost` or `httpsPath` is missing,
-  before calling the plugin. That call never worked (the plugin launched
-  `https` as a custom scheme and the callback never came back); custom-scheme
-  calls are unchanged.
+- On Android, iOS and macOS, `FlutterWebAuth2Impl.authenticate` throws an
+  `ArgumentError` when `callbackUrlScheme` is `https` but `httpsHost` or
+  `httpsPath` is missing, before calling the plugin. On Android that call
+  never worked (the plugin launched `https` as a custom scheme and the
+  callback never came back). Linux, Windows and web, where the desktop
+  webview can match an https callback by host alone, are unchanged, and so
+  are custom-scheme calls everywhere.
 - `HeadlessLogin` (debug-only) recognizes the callback by an exact scheme,
   host, port and path match instead of a string prefix, so it stops at an
   https callback without requesting it and follows a sibling path such as

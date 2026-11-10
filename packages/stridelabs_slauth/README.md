@@ -269,12 +269,20 @@ in per build; nothing changes for an app that keeps its custom scheme.
    mail links. Don't add the plugin's optional `ACTION_SEND` text/plain filter
    either: it lets any app hand `CallbackActivity` a callback URL.
 
-How the callback comes back: in a browser with Auth Tab support (androidx
-browser 1.9's `AuthTabIntent`), the browser itself checks the app's link and
-returns the redirect to the plugin; a failed check fails the sign-in. In other
-browsers the redirect leaves the Custom Tab as an App Link and reaches
-`CallbackActivity` through the filter above, which Android routes only to a
-verified app.
+How the callback comes back:
+- **Auth Tab** (androidx browser 1.9's `AuthTabIntent`; Chrome took this path
+  from 133 in our checks): the browser fetches `assetlinks.json` from the
+  link's host itself and returns the redirect to the plugin only when the
+  app's package and signing certificate match a statement there. A failed
+  check fails the sign-in (`PlatformException` code `FAILED`). Android's own
+  domain verification state and the user's link settings play no part, so
+  the statement must be served on the link's host.
+- **Custom Tab** (browsers without Auth Tab): the redirect leaves the tab as
+  an App Link and reaches `CallbackActivity` through the filter above.
+  Android routes it to the app when its domain verification succeeded, or
+  when the user has turned on the domain for the app in its "Open by
+  default" settings, which bypasses verification. Only the Auth Tab path
+  checks the certificate on every sign-in.
 
 **Use it on Android 12 (API 31) or later.** Android verifies App Links from
 API 23, but before 12 a link whose verification failed or hasn't finished

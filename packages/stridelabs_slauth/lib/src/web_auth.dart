@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
 import 'loopback_web_auth.dart' show LoopbackWebAuth;
@@ -212,6 +214,16 @@ class WebAuthOptions {
             Duration.microsecondsPerSecond;
 }
 
+/// The platforms whose `flutter_web_auth_2` https callback needs both
+/// `httpsHost` and `httpsPath`.
+bool get _needsHttpsHostAndPath =>
+    !kIsWeb &&
+    const {
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+    }.contains(defaultTargetPlatform);
+
 /// Production implementation backed by `flutter_web_auth_2`: opens the OS
 /// "secure browser" (`ASWebAuthenticationSession` on iOS/macOS, Chrome Custom
 /// Tabs on Android) and returns the callback URI.
@@ -231,17 +243,21 @@ class FlutterWebAuth2Impl implements WebAuth {
 
   final WebAuthOptions options;
 
-  /// Throws an [ArgumentError] when [callbackUrlScheme] is `https` and
-  /// [options] lacks [WebAuthOptions.httpsHost] or [WebAuthOptions.httpsPath]
-  /// (build them with [WebAuthOptions.forRedirect]). Without both, the
-  /// plugin's Android side launches the sign-in as if `https` were a custom
-  /// scheme, and the callback never returns.
+  /// On Android, iOS and macOS, throws an [ArgumentError] when
+  /// [callbackUrlScheme] is `https` and [options] lacks
+  /// [WebAuthOptions.httpsHost] or [WebAuthOptions.httpsPath] (build them
+  /// with [WebAuthOptions.forRedirect]). Those platforms need both: without
+  /// them, the plugin's Android side launches the sign-in as if `https` were
+  /// a custom scheme and the callback never returns. Linux, Windows and web
+  /// are unchanged (the desktop webview can match an https callback by host
+  /// alone).
   @override
   Future<Uri> authenticate({
     required Uri url,
     required String callbackUrlScheme,
   }) async {
-    if (callbackUrlScheme.toLowerCase() == 'https' &&
+    if (_needsHttpsHostAndPath &&
+        callbackUrlScheme.toLowerCase() == 'https' &&
         ((options.httpsHost ?? '').isEmpty ||
             (options.httpsPath ?? '').isEmpty)) {
       throw ArgumentError(

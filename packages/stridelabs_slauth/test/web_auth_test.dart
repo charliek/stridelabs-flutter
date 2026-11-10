@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:flutter_web_auth_2_platform_interface/flutter_web_auth_2_platform_interface.dart';
@@ -251,8 +252,24 @@ void main() {
     );
   });
 
+  test('Linux, Windows: an https callback with httpsHost alone still reaches '
+      'the plugin (its webview matches by host)', () async {
+    for (final p in [TargetPlatform.linux, TargetPlatform.windows]) {
+      debugDefaultTargetPlatformOverride = p;
+      try {
+        platform.result = 'https://auth.example.com/cb?code=c&state=s';
+        await FlutterWebAuth2Impl(
+          options: WebAuthOptions(httpsHost: 'auth.example.com'),
+        ).authenticate(url: _url, callbackUrlScheme: 'https');
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+    expect(platform.calls, hasLength(2));
+  });
+
   test('an https callback without httpsHost or httpsPath is refused before '
-      'the plugin is called', () async {
+      'the plugin is called (Android; iOS and macOS alike)', () async {
     for (final options in [
       WebAuthOptions.defaults,
       WebAuthOptions(httpsHost: 'auth.example.com'),
@@ -268,6 +285,21 @@ void main() {
             isA<ArgumentError>().having((e) => e.name, 'name', 'options'),
           ),
         );
+      }
+    }
+    // flutter_test's default platform is Android; iOS and macOS need both too.
+    for (final p in [TargetPlatform.iOS, TargetPlatform.macOS]) {
+      debugDefaultTargetPlatformOverride = p;
+      try {
+        await expectLater(
+          const FlutterWebAuth2Impl().authenticate(
+            url: _url,
+            callbackUrlScheme: 'https',
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
       }
     }
     expect(platform.calls, isEmpty);
