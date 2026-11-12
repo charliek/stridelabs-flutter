@@ -1,6 +1,6 @@
 name: stridelabs_slauth
 description: "slauth (Ory Hydra + Kratos) OAuth2 PKCE client for StrideLabs native apps — system-browser login, token refresh with rotation, and a debug-only headless login."
-version: 0.4.0
+version: 0.5.0
 publish_to: 'none'
 
 environment:
@@ -19,7 +19,9 @@ dependencies:
   cookie_jar: ^4.0.8
 
   # OAuth2 system-browser flow (custom-scheme redirect back into the app).
-  flutter_web_auth_2: ^5.0.2
+  # Held below 5.2.0: android/ copies 5.1.0's browser choice for the Auth Tab
+  # check (androidAuthTabBrowser), so a plugin upgrade must re-check that copy.
+  flutter_web_auth_2: ">=5.1.0 <5.2.0"
   # LoopbackWebAuth's default launcher: the user's default browser (desktop).
   url_launcher: ^6.3.2
 
@@ -38,3 +40,12 @@ dev_dependencies:
   fake_async: ^1.3.1
   # Fake plugin platform: proves WebAuthOptions reach FlutterWebAuth2.authenticate.
   flutter_web_auth_2_platform_interface: ^5.0.0
+
+# The Android half of androidAuthTabBrowser (lib/src/auth_tab.dart). No other
+# platform has native code.
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: ai.stridelabs.slauth
+        pluginClass: StridelabsSlauthPlugin

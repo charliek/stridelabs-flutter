@@ -12,6 +12,10 @@
 ///   (audience explicit).
 /// - [WebAuth] / [FlutterWebAuth2Impl] / [WebAuthOptions] — system-browser
 ///   flow abstraction and its plugin options.
+/// - [chooseSignInRedirect] / [androidAuthTabBrowser] /
+///   [androidAuthTabSupported] ([AuthTabBrowser], [AuthTabCheck]) — the
+///   per-sign-in choice between an Android App Link redirect (only where the
+///   browser opens as an Auth Tab) and the custom scheme.
 /// - [LoopbackWebAuth] — opt-in desktop [WebAuth]: the default browser and a
 ///   loopback redirect (RFC 8252) on a server it owns; an [InteractiveWebAuth]
 ///   (`cancel()`, `reopen()`) with typed [LoopbackAuthFailure]s, injectable
@@ -40,6 +44,7 @@ library;
 
 export 'src/auth_config.dart';
 export 'src/auth_errors.dart';
+export 'src/auth_tab.dart' hide authTabChannel;
 export 'src/auth_service.dart';
 export 'src/authorize_url.dart';
 export 'src/default_browser.dart' show linuxDefaultBrowserCheck;

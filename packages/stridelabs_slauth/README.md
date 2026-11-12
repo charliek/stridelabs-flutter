@@ -220,18 +220,32 @@ in per build; nothing changes for an app that keeps its custom scheme.
 1. **Register** the https redirect for the client in slauth (its `app_links`
    block), and publish `/.well-known/assetlinks.json` on the link's host
    naming the package and each signing certificate's SHA-256.
-2. **Sign in with it.** Set `redirectUri` to the link, and build the browser
-   options from it:
+2. **Choose the redirect at each sign-in**, and build the browser options
+   from it:
    ```dart
+   final redirect = await chooseSignInRedirect(
+     customSchemeRedirect: 'myapp://auth/callback',
+     appLinkRedirect: 'https://auth.example.com/app/myapp/callback',
+   );
    final webAuth = FlutterWebAuth2Impl(
-     // config.redirectUri: 'https://auth.example.com/app/myapp/callback'
-     options: WebAuthOptions.forRedirect(config.redirectUri),
+     options: WebAuthOptions.forRedirect(redirect),
    );
    await webAuth.authenticate(
-     url: config.authorizeUrl(codeChallenge: challenge, state: state),
-     callbackUrlScheme: config.callbackUrlScheme, // 'https'
+     url: buildAuthorizeUrl(/* ... */ redirectUri: redirect /* ... */),
+     callbackUrlScheme: Uri.parse(redirect).scheme, // 'https' or 'myapp'
    );
+   // ...and exchange the code with the same `redirect`.
    ```
+   `chooseSignInRedirect` returns the App Link only on Android, and only
+   when the browser flutter_web_auth_2 will open declares Auth Tab support
+   (see "How the callback comes back" below); otherwise the custom scheme,
+   which keeps slauth's consent screen. Call it per sign-in, not per app run
+   (the default browser can change), and use its answer for the authorize
+   URL, the options, the callback check and the code exchange. Pass your own
+   `check` to log the decision: `androidAuthTabBrowser(options)` returns the
+   browser's package, version and answer, and never throws. Register both
+   redirects for the client.
+
    `forRedirect` takes the exact string sent as `redirect_uri`. It sets
    `httpsHost` and `httpsPath` from an https redirect and returns the base
    options unchanged for any other scheme, so one code path serves both
@@ -270,9 +284,13 @@ in per build; nothing changes for an app that keeps its custom scheme.
    either: it lets any app hand `CallbackActivity` a callback URL.
 
 How the callback comes back:
-- **Auth Tab** (androidx browser 1.9's `AuthTabIntent`). The Chrome 133 we
-  tested took this path; that is an observation, not a version floor. The
-  browser returns the redirect to the plugin only when the link is verified
+- **Auth Tab** (androidx browser 1.9's `AuthTabIntent`). flutter_web_auth_2
+  always launches one; a browser without Auth Tab opens it as a plain Custom
+  Tab (next point). `androidAuthTabBrowser` trusts only a browser that
+  declares Auth Tab (`CustomTabsClient.isAuthTabSupported`, a category on its
+  Custom Tabs service): Chrome 156 does, Chrome 133 and 91 don't. Chrome 133
+  returned an https callback in our checks all the same, but it is treated as
+  "no", which only costs the consent screen. The browser returns the redirect to the plugin only when the link is verified
   for the app. Either Android has verified the
   domain for it, or the browser's own Digital Asset Links check (it fetches
   `assetlinks.json` from the link's host) matches the app's package and
@@ -287,15 +305,16 @@ How the callback comes back:
   Custom Tab never handed the redirect back to the app that opened it**
   (Chrome 91 on Android 12: silent and interactive, the auth host and
   another host, the domain approved or not), so the sign-in stayed in the
-  browser. Treat Auth Tab support in the user's default browser as a
-  requirement for the https callback, and keep the custom scheme otherwise.
+  browser. That is why `chooseSignInRedirect` takes the custom scheme
+  whenever Auth Tab isn't declared.
 
 **Use it on Android 12 (API 31) or later.** Android verifies App Links from
 API 23, but before 12 a link whose verification failed or hasn't finished
 still goes to a chooser listing every app that declares the filter, so
 another app could be offered the callback. From 12, an unverified https link
 opens in the browser instead. Gate the https redirect to API 31+ (or set the
-app's `minSdk` to 31); this package's own `minSdk` is unchanged. Either way,
+app's `minSdk` to 31); this package's Android part asks only for
+Flutter's floor (24). Either way,
 check the callback's scheme, host, path and `state` as you do for a custom
 scheme.
 
