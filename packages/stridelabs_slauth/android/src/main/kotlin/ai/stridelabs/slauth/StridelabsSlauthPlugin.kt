@@ -66,9 +66,15 @@ class StridelabsSlauthPlugin : FlutterPlugin, MethodCallHandler {
             val authTab = pkg != null &&
                 CustomTabsClient.isAuthTabSupported(ctx, pkg) &&
                 launchesAuthTab(pkg, version, preferEphemeral)
-            Log.d(TAG, "Auth Tab check: browser=$pkg version=$version authTab=$authTab")
+            val sdkInt = Build.VERSION.SDK_INT
+            Log.d(TAG, "Auth Tab check: browser=$pkg version=$version authTab=$authTab sdk=$sdkInt")
             result.success(
-                mapOf("package" to pkg, "version" to version, "authTab" to authTab),
+                mapOf(
+                    "package" to pkg,
+                    "version" to version,
+                    "authTab" to authTab,
+                    "sdkInt" to sdkInt,
+                ),
             )
         } catch (e: Exception) {
             result.error("AUTH_TAB_CHECK_FAILED", e.toString(), null)

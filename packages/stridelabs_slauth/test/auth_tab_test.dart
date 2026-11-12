@@ -31,6 +31,7 @@ void main() {
           'package': 'com.android.chrome',
           'version': '147.0.7727.55',
           'authTab': true,
+          'sdkInt': 37,
         },
       );
       final browser = await androidAuthTabBrowser(
@@ -48,6 +49,8 @@ void main() {
       expect(browser.packageName, 'com.android.chrome');
       expect(browser.version, '147.0.7727.55');
       expect(browser.supportsAuthTab, isTrue);
+      expect(browser.sdkInt, 37);
+      expect(browser.allowsAppLink, isTrue);
       expect(browser.error, isNull);
     });
 
@@ -70,6 +73,7 @@ void main() {
         answer(reply: reply);
         final browser = await androidAuthTabBrowser(WebAuthOptions.defaults);
         expect(browser.supportsAuthTab, isFalse, reason: '$reply');
+        expect(browser.allowsAppLink, isFalse, reason: '$reply');
       }
     });
 
@@ -95,7 +99,7 @@ void main() {
         try {
           final browser = await androidAuthTabBrowser(WebAuthOptions.defaults);
           expect(browser.supportsAuthTab, isFalse, reason: '$p');
-          expect(await androidAuthTabSupported(WebAuthOptions.defaults), false);
+          expect(await androidAppLinkAllowed(WebAuthOptions.defaults), false);
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
@@ -103,12 +107,22 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('androidAuthTabSupported is the browser answer alone', () async {
-      answer(reply: {'package': 'com.android.chrome', 'authTab': true});
-      expect(await androidAuthTabSupported(WebAuthOptions.defaults), isTrue);
-      answer(reply: {'package': 'com.android.chrome', 'authTab': false});
-      expect(await androidAuthTabSupported(WebAuthOptions.defaults), isFalse);
-    });
+    test(
+      'androidAppLinkAllowed: Auth Tab on Android 12 (API 31) or later',
+      () async {
+        Future<bool> allowed(Map<String, Object?> reply) {
+          answer(reply: reply);
+          return androidAppLinkAllowed(WebAuthOptions.defaults);
+        }
+
+        expect(await allowed({'authTab': true, 'sdkInt': 31}), isTrue);
+        expect(await allowed({'authTab': true, 'sdkInt': 37}), isTrue);
+        // Before 12 an unverified App Link goes to a chooser.
+        expect(await allowed({'authTab': true, 'sdkInt': 30}), isFalse);
+        expect(await allowed({'authTab': true}), isFalse); // API level unknown
+        expect(await allowed({'authTab': false, 'sdkInt': 37}), isFalse);
+      },
+    );
   });
 
   group('chooseSignInRedirect', () {
@@ -225,15 +239,22 @@ void main() {
     });
 
     test('an App Link that is not https is a configuration error', () {
-      for (final bad in [
-        'http://auth.example.com/app/myapp/callback',
-        'myapp://auth/callback',
-        'auth.example.com/app/myapp/callback',
+      for (final (bad, base) in [
+        ('http://auth.example.com/app/myapp/callback', WebAuthOptions.defaults),
+        ('myapp://auth/callback', WebAuthOptions.defaults),
+        ('auth.example.com/app/myapp/callback', WebAuthOptions.defaults),
+        // forRedirect would return this base unchanged, httpsHost and all
+        // (CodeRabbit).
+        (
+          'http://auth.example.com/app/myapp/callback',
+          WebAuthOptions(httpsHost: 'auth.example.com', httpsPath: '/cb'),
+        ),
       ]) {
         expect(
           choose(
             appLink: bad,
             platform: TargetPlatform.android,
+            base: base,
             check: (_) async => true,
           ),
           throwsA(
@@ -249,7 +270,9 @@ void main() {
     });
 
     test('the default check asks the channel', () async {
-      final calls = answer(reply: {'package': 'p', 'authTab': true});
+      final calls = answer(
+        reply: {'package': 'p', 'authTab': true, 'sdkInt': 31},
+      );
       expect(
         await chooseSignInRedirect(
           customSchemeRedirect: _scheme,
@@ -258,6 +281,16 @@ void main() {
         _link,
       );
       expect(calls, hasLength(1));
+
+      // ...whose default also requires Android 12 or later.
+      answer(reply: {'package': 'p', 'authTab': true, 'sdkInt': 30});
+      expect(
+        await chooseSignInRedirect(
+          customSchemeRedirect: _scheme,
+          appLinkRedirect: _link,
+        ),
+        _scheme,
+      );
     });
   });
 }

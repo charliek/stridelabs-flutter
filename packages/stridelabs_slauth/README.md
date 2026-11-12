@@ -236,14 +236,16 @@ in per build; nothing changes for an app that keeps its custom scheme.
    );
    // ...and exchange the code with the same `redirect`.
    ```
-   `chooseSignInRedirect` returns the App Link only on Android, and only
-   when the browser flutter_web_auth_2 will open declares Auth Tab support
-   (see "How the callback comes back" below); otherwise the custom scheme,
+   `chooseSignInRedirect` returns the App Link only on Android 12 (API 31)
+   or later (see "Use it on Android 12" below), and only when the browser
+   flutter_web_auth_2 will open declares Auth Tab support (see "How the
+   callback comes back" below); otherwise the custom scheme,
    which keeps slauth's consent screen. Call it per sign-in, not per app run
    (the default browser can change), and use its answer for the authorize
    URL, the options, the callback check and the code exchange. Pass your own
    `check` to log the decision: `androidAuthTabBrowser(options)` returns the
-   browser's package, version and answer, and never throws. Register both
+   browser's package, version, the API level and the answer
+   (`allowsAppLink`), and never throws. Register both
    redirects for the client.
 
    `forRedirect` takes the exact string sent as `redirect_uri`. It sets
@@ -313,11 +315,11 @@ How the callback comes back:
 API 23, but before 12 a link whose verification failed or hasn't finished
 still goes to a chooser listing every app that declares the filter, so
 another app could be offered the callback. From 12, an unverified https link
-opens in the browser instead. Gate the https redirect to API 31+ (or set the
-app's `minSdk` to 31); this package's Android part asks only for
-Flutter's floor (24). Either way,
-check the callback's scheme, host, path and `state` as you do for a custom
-scheme.
+opens in the browser instead. `chooseSignInRedirect`'s default check
+(`AuthTabBrowser.allowsAppLink`) gates the https redirect to API 31+; a
+custom `check` should too, or set the app's `minSdk` to 31. This package's
+Android part asks only for Flutter's floor (24). Either way, check the
+callback's scheme, host, path and `state` as you do for a custom scheme.
 
 Keep `postLogoutUri` on the custom scheme: logout has no consent step, and
 `forRedirect` only describes the sign-in redirect. Desktop and iOS keep the
