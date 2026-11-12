@@ -224,6 +224,30 @@ void main() {
       }
     });
 
+    test('an App Link that is not https is a configuration error', () {
+      for (final bad in [
+        'http://auth.example.com/app/myapp/callback',
+        'myapp://auth/callback',
+        'auth.example.com/app/myapp/callback',
+      ]) {
+        expect(
+          choose(
+            appLink: bad,
+            platform: TargetPlatform.android,
+            check: (_) async => true,
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.name,
+              'name',
+              'appLinkRedirect',
+            ),
+          ),
+          reason: bad,
+        );
+      }
+    });
+
     test('the default check asks the channel', () async {
       final calls = answer(reply: {'package': 'p', 'authTab': true});
       expect(

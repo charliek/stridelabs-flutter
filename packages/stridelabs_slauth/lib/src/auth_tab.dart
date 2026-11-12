@@ -52,9 +52,11 @@ const authTabChannel = MethodChannel('stridelabs_slauth/auth_tab');
 /// add-to-app host) or on a platform error it returns
 /// `supportsAuthTab: false` with the [AuthTabBrowser.error].
 ///
-/// Why it matters: the plugin always launches an `AuthTabIntent`, which on a
-/// browser without Auth Tab quietly opens a plain Custom Tab, and there an
-/// https (App Link) callback never comes back to the app. Only a declared
+/// Why it matters: the plugin launches an `AuthTabIntent` (unless an
+/// ephemeral sign-in meets a browser below its version thresholds, when it
+/// launches a Custom Tab, which this check also answers no for), and on a
+/// browser without Auth Tab that intent quietly opens a plain Custom Tab,
+/// where an https (App Link) callback never comes back to the app. Only a declared
 /// Auth Tab is trusted, never a version guess: some browsers return https
 /// callbacks before they declare it (Chrome 133 did, in our checks), and
 /// this still says no for them, which only costs the custom scheme's
@@ -107,10 +109,17 @@ Future<bool> androidAuthTabSupported(WebAuthOptions options) async =>
 /// (`WebAuthOptions.forRedirect(redirect, base: base)`), the callback check
 /// and the token exchange. Sign-out keeps its own custom-scheme redirect.
 ///
-/// An [appLinkRedirect] that `WebAuthOptions.forRedirect` refuses throws its
-/// [ArgumentError] (a configuration error, reported rather than hidden by the
-/// fallback). A [check] that throws counts as no. [platform] defaults to
+/// On Android, an [appLinkRedirect] that is not an https redirect
+/// `WebAuthOptions.forRedirect` accepts throws an [ArgumentError] (a
+/// configuration error, reported rather than hidden by the fallback). A
+/// [check] that throws counts as no. [platform] defaults to
 /// `defaultTargetPlatform`.
+///
+/// The check and the launch are separate moments: `flutter_web_auth_2`
+/// chooses its browser again when it launches, moments later. Only a browser
+/// change in between (the default switched, the browser removed) could open
+/// an https sign-in in a plain Custom Tab; that sign-in would not return, and
+/// the next attempt checks afresh.
 Future<String> chooseSignInRedirect({
   required String customSchemeRedirect,
   required String appLinkRedirect,
@@ -124,6 +133,13 @@ Future<String> chooseSignInRedirect({
     return customSchemeRedirect;
   }
   final options = WebAuthOptions.forRedirect(appLinkRedirect, base: base);
+  if (options.httpsHost == null) {
+    // forRedirect passes any other scheme through unchanged.
+    throw ArgumentError(
+      'the App Link must be an https redirect',
+      'appLinkRedirect',
+    );
+  }
   bool authTab;
   try {
     authTab = await check(options);

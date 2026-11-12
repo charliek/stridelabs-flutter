@@ -7,8 +7,9 @@
   check:, platform:)`: the `redirect_uri` for one sign-in. It returns the
   https App Link only on Android, when the link is set and the browser opens
   as an Auth Tab; otherwise the custom scheme, which keeps slauth's consent
-  screen (slauth AD-184). An App Link that `WebAuthOptions.forRedirect`
-  refuses throws its `ArgumentError`; a check that throws counts as no.
+  screen (slauth AD-184). On Android, an App Link that is not an https
+  redirect `WebAuthOptions.forRedirect` accepts throws an `ArgumentError`; a
+  check that throws counts as no.
 - `androidAuthTabBrowser(WebAuthOptions)`, returning an `AuthTabBrowser`
   (package, version, `supportsAuthTab`, `error`), and
   `androidAuthTabSupported`, the default `AuthTabCheck`. They ask Android which

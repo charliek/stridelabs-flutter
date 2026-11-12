@@ -285,7 +285,8 @@ in per build; nothing changes for an app that keeps its custom scheme.
 
 How the callback comes back:
 - **Auth Tab** (androidx browser 1.9's `AuthTabIntent`). flutter_web_auth_2
-  always launches one; a browser without Auth Tab opens it as a plain Custom
+  launches one, except for an ephemeral sign-in on a browser below its
+  version thresholds; a browser without Auth Tab opens it as a plain Custom
   Tab (next point). `androidAuthTabBrowser` trusts only a browser that
   declares Auth Tab (`CustomTabsClient.isAuthTabSupported`, a category on its
   Custom Tabs service): Chrome 156 does, Chrome 133 and 91 don't. Chrome 133
