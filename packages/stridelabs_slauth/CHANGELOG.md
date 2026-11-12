@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.0 - 2026-11-12
+
+### Added
+- `chooseSignInRedirect(customSchemeRedirect:, appLinkRedirect:, base:,
+  check:, platform:)`: the `redirect_uri` for one sign-in. It returns the
+  https App Link only on Android, when the link is set and the browser opens
+  as an Auth Tab; otherwise the custom scheme, which keeps slauth's consent
+  screen (slauth AD-184). The default check also requires Android 12 (API
+  31) or later, where an unverified App Link no longer goes to a chooser. On
+  Android, an App Link that is not an `https:` redirect
+  `WebAuthOptions.forRedirect` accepts throws an `ArgumentError`; a check that
+  throws counts as no.
+- `androidAuthTabBrowser(WebAuthOptions)`, returning an `AuthTabBrowser`
+  (package, version, `supportsAuthTab`, `sdkInt`, `error`, and
+  `allowsAppLink`: Auth Tab on Android 12 (API 31) or later), and
+  `androidAppLinkAllowed`, the default `AuthTabCheck`. They ask Android which
+  browser flutter_web_auth_2 5.1 would open (`customTabsPackageOrder`, then
+  the default browser, then the installed ones; its ephemeral version
+  thresholds included) and whether it declares Auth Tab support
+  (`CustomTabsClient.isAuthTabSupported`). Never throws: off Android, without
+  the plugin or on an error, the answer is no.
+- An Android plugin part (`ai.stridelabs.slauth.StridelabsSlauthPlugin`, the
+  `stridelabs_slauth/auth_tab` channel; androidx.browser 1.9.0, minSdk 24).
+  Its manifest declares the two package-visibility queries the check needs.
+  No other platform has native code.
+
+### Changed
+- flutter_web_auth_2 is held at `>=5.1.0 <5.2.0`: the Android part copies
+  5.1.0's browser choice, so a plugin upgrade must re-check that copy.
+- README: "Android App Link callback" chooses the redirect per sign-in, and
+  says which browsers declare Auth Tab.
+
 ## 0.4.0 - 2026-11-10
 
 ### Added

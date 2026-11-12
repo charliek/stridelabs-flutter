@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Package visibility (Android 11+) for the Auth Tab check: the browsers
+         that offer Custom Tabs, and those that open https links. These are
+         the same two queries flutter_web_auth_2 declares to choose its
+         browser; repeated here so the check never depends on another
+         package's manifest. -->
+    <queries>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+</manifest>
