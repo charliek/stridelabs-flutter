@@ -1587,9 +1587,13 @@ class _Held {
 }
 
 class _Reply {
-  _Reply(this.status, this.headers, this.body, {this.refused = false});
+  _Reply(this.status, this.headers, this.body) : refused = false;
 
-  _Reply.refused() : this(null, const {}, '', refused: true);
+  _Reply.refused()
+    : status = null,
+      headers = const {},
+      body = '',
+      refused = true;
 
   /// Parses one HTTP/1.1 response; [status] is null when no complete head
   /// arrived (the connection was dropped).

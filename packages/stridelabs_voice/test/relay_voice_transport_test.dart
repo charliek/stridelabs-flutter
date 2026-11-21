@@ -1597,11 +1597,9 @@ void main() {
         expect(channel.clientCloseCode, 4104);
         expect(channel.endReceived, isFalse);
         expect(closedAtOnce, 4104, reason: 'at once, with no end wait');
-        expect(
-          channel.sent.map(_describe),
-          ['audio 3840'],
-          reason: 'nothing more is taken from a recorder that would not stop',
-        );
+        expect(channel.sent.map(_describe), [
+          'audio 3840',
+        ], reason: 'nothing more is taken from a recorder that would not stop');
         // The caller (the app's mic-off) learns of it, and ends the voice
         // session as VoiceDisconnectCause.failed.
         expect(done, isFalse);
@@ -2091,11 +2089,9 @@ void main() {
           async.flushMicrotasks();
           // 5000: the 3 s buffer (37 frames) whole. 2000: the newest second
           // (12 frames), the oldest trimmed, nothing past the lead.
-          expect(
-            r.server.channel.sentAudio.map((f) => f.first),
-            [for (var i = first; i < first + count; i++) i],
-            reason: 'lead_ms=$leadMs',
-          );
+          expect(r.server.channel.sentAudio.map((f) => f.first), [
+            for (var i = first; i < first + count; i++) i,
+          ], reason: 'lead_ms=$leadMs');
           _micOff(r);
         });
       }

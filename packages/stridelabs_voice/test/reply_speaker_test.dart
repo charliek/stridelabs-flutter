@@ -138,11 +138,10 @@ void main() {
         s.player.finishHead();
         s.flush();
         expect(s.playing, isFalse);
-        expect(
-          s.playingLog,
-          [true, false],
-          reason: 'one continuous playing span across the three clips',
-        );
+        expect(s.playingLog, [
+          true,
+          false,
+        ], reason: 'one continuous playing span across the three clips');
         expect(s.files.files, isEmpty, reason: 'each clip deleted after it');
         expect(s.files.deleted, s.player.enqueued);
       });
@@ -1622,11 +1621,9 @@ void main() {
         expect(s.playingLog, [true, false]);
         expect(s.player.disposed, isTrue);
         expect(s.player.stopCount, 1);
-        expect(
-          s.player.releases,
-          [false],
-          reason: 'stopped, then released as the mic (off) allows',
-        );
+        expect(s.player.releases, [
+          false,
+        ], reason: 'stopped, then released as the mic (off) allows');
         expect(s.files.files, isEmpty);
         // The replacement speaks.
         s.origins['t2'] = _Origin.voice;
