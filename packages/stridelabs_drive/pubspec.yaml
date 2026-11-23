@@ -12,7 +12,7 @@ dependencies:
 
   # Agent-driving binding: forwards debugPrint into a log collector an agent
   # reads over the Dart VM Service. Debug-only; tree-shaken from release builds.
-  marionette_flutter: ^0.5.0
+  marionette_flutter: ^0.7.0
 
 dev_dependencies:
   flutter_test:
