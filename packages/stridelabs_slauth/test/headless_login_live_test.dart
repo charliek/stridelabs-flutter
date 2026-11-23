@@ -38,67 +38,63 @@ void main() {
     ('slaudio-mobile', 'slaudio', 'slaudio'),
     ('tapper', 'tapper', 'tapper'),
   ]) {
-    test(
-      '$clientId signs in through the consent screen',
-      () async {
-        final subject = env['SLAUTH_LIVE_SUBJECT']!;
-        final paths = <String>[];
-        final dio =
-            Dio(
-                BaseOptions(
-                  connectTimeout: const Duration(seconds: 15),
-                  receiveTimeout: const Duration(seconds: 15),
-                  validateStatus: (s) => s != null && s < 400,
-                ),
-              )
-              ..interceptors.add(
-                InterceptorsWrapper(
-                  onRequest: (options, handler) {
-                    paths.add('${options.method} ${options.uri.path}');
-                    handler.next(options);
-                  },
-                ),
-              );
-
-        final tokens =
-            await HeadlessLogin(
-              config: SlauthConfig(
-                baseUrl: base!,
-                clientId: clientId,
-                audience: audience,
-                redirectUri: '$scheme://auth/callback',
-                postLogoutUri: '$scheme://auth/logout',
+    test('$clientId signs in through the consent screen', () async {
+      final subject = env['SLAUTH_LIVE_SUBJECT']!;
+      final paths = <String>[];
+      final dio =
+          Dio(
+              BaseOptions(
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 15),
+                validateStatus: (s) => s != null && s < 400,
               ),
-              dio: dio,
-            ).login(
-              email: env['SLAUTH_LIVE_EMAIL']!,
-              password: env['SLAUTH_LIVE_PASSWORD']!,
+            )
+            ..interceptors.add(
+              InterceptorsWrapper(
+                onRequest: (options, handler) {
+                  paths.add('${options.method} ${options.uri.path}');
+                  handler.next(options);
+                },
+              ),
             );
 
-        // ignore: avoid_print
-        print('live $clientId: ${paths.join(' -> ')}');
-        expect(paths, contains('POST /api/v1/account/login'));
-        expect(paths, contains('POST /api/v1/oauth/consent/accept'));
+      final tokens =
+          await HeadlessLogin(
+            config: SlauthConfig(
+              baseUrl: base!,
+              clientId: clientId,
+              audience: audience,
+              redirectUri: '$scheme://auth/callback',
+              postLogoutUri: '$scheme://auth/logout',
+            ),
+            dio: dio,
+          ).login(
+            email: env['SLAUTH_LIVE_EMAIL']!,
+            password: env['SLAUTH_LIVE_PASSWORD']!,
+          );
 
-        final access = _jwtClaims(tokens['access_token']);
-        expect(access['sub'], subject);
-        expect(access['aud'], contains(audience));
-        expect(_jwtClaims(tokens['id_token'])['sub'], subject);
-        expect(tokens['refresh_token'], isA<String>());
+      // ignore: avoid_print
+      print('live $clientId: ${paths.join(' -> ')}');
+      expect(paths, contains('POST /api/v1/account/login'));
+      expect(paths, contains('POST /api/v1/oauth/consent/accept'));
 
-        // The server takes its own token back: it isn't merely JWT-shaped.
-        final userinfo = await Dio().get<Map<String, dynamic>>(
-          '$base/userinfo',
-          options: Options(
-            headers: {'Authorization': 'Bearer ${tokens['access_token']}'},
-          ),
-        );
-        expect(userinfo.data?['sub'], subject);
+      final access = _jwtClaims(tokens['access_token']);
+      expect(access['sub'], subject);
+      expect(access['aud'], contains(audience));
+      expect(_jwtClaims(tokens['id_token'])['sub'], subject);
+      expect(tokens['refresh_token'], isA<String>());
 
-        // ignore: avoid_print
-        print('live $clientId: tokens issued, access and id sub match subject');
-      },
-      skip: base == null ? 'SLAUTH_LIVE_BASE is not set' : false,
-    );
+      // The server takes its own token back: it isn't merely JWT-shaped.
+      final userinfo = await Dio().get<Map<String, dynamic>>(
+        '$base/userinfo',
+        options: Options(
+          headers: {'Authorization': 'Bearer ${tokens['access_token']}'},
+        ),
+      );
+      expect(userinfo.data?['sub'], subject);
+
+      // ignore: avoid_print
+      print('live $clientId: tokens issued, access and id sub match subject');
+    }, skip: base == null ? 'SLAUTH_LIVE_BASE is not set' : false);
   }
 }

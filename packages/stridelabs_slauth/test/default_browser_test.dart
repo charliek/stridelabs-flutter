@@ -229,34 +229,26 @@ void main() {
       );
     });
 
-    test(
-      'a tool that answers: its exit code and stdout',
-      () async {
-        final run = await runTool('sh', const [
-          '-c',
-          'echo "\$LC_ALL"; exit 3',
-        ], const Duration(seconds: 5));
-        expect(
-          run,
-          isA<ToolFinished>()
-              .having((r) => r.exitCode, 'exitCode', 3)
-              .having((r) => r.stdout, 'stdout', 'C\n'),
-        );
-      },
-      skip: posix ? false : 'POSIX only',
-    );
+    test('a tool that answers: its exit code and stdout', () async {
+      final run = await runTool('sh', const [
+        '-c',
+        'echo "\$LC_ALL"; exit 3',
+      ], const Duration(seconds: 5));
+      expect(
+        run,
+        isA<ToolFinished>()
+            .having((r) => r.exitCode, 'exitCode', 3)
+            .having((r) => r.stdout, 'stdout', 'C\n'),
+      );
+    }, skip: posix ? false : 'POSIX only');
 
-    test(
-      'a tool that hangs: timed out within the bound, and killed',
-      () async {
-        final watch = Stopwatch()..start();
-        final run = await runTool('sleep', const [
-          '30',
-        ], const Duration(milliseconds: 300));
-        expect(run, isA<ToolTimedOut>());
-        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
-      },
-      skip: posix ? false : 'POSIX only',
-    );
+    test('a tool that hangs: timed out within the bound, and killed', () async {
+      final watch = Stopwatch()..start();
+      final run = await runTool('sleep', const [
+        '30',
+      ], const Duration(milliseconds: 300));
+      expect(run, isA<ToolTimedOut>());
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    }, skip: posix ? false : 'POSIX only');
   });
 }

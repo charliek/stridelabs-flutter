@@ -648,11 +648,9 @@ void main() {
           expect(rig.svc.accessToken, 'a0', reason: 'memory still holds A');
           final refresh = rig.svc.refreshSession();
           await pumpEventQueue();
-          expect(
-            rig.endpoint.refreshes,
-            ['r0'],
-            reason: 'the refresh went out in the window, with A\'s token',
-          );
+          expect(rig.endpoint.refreshes, [
+            'r0',
+          ], reason: 'the refresh went out in the window, with A\'s token');
 
           barrier.release();
           final exchanged = await exchange;
@@ -708,11 +706,10 @@ void main() {
       );
       final fresh = rig.svc.refreshSession(); // B's
       await pumpEventQueue();
-      expect(
-        rig.endpoint.refreshes,
-        ['r0', 'b-r'],
-        reason: 'B gets its own call, not A\'s stale result',
-      );
+      expect(rig.endpoint.refreshes, [
+        'r0',
+        'b-r',
+      ], reason: 'B gets its own call, not A\'s stale result');
       expect(await fresh, RefreshOutcome.refreshed);
       oldReply.complete(
         tokens('stale-a', refresh: const RefreshTokenPresent('stale-r')),
@@ -902,11 +899,9 @@ void main() {
           tokens('$token-rotated-a', expiresAt: inOneDay());
 
       expect(await signInB(rig), isTrue);
-      expect(
-        rig.store.data.keys,
-        [kMarker],
-        reason: 'never B\'s refresh token next to A\'s access token',
-      );
+      expect(rig.store.data.keys, [
+        kMarker,
+      ], reason: 'never B\'s refresh token next to A\'s access token');
       expect(await rig.svc.restoreFromStorage(), isTrue);
       expect(rig.svc.accessToken, 'b-a');
       expect(await rig.svc.refreshSession(), RefreshOutcome.refreshed);

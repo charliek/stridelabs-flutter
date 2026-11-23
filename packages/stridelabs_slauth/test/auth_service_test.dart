@@ -298,16 +298,12 @@ void main() {
 
       await svc.logout();
 
-      expect(
-        store.deleteAttempts.toSet(),
-        {
-          'slauth_access_token',
-          'slauth_refresh_token',
-          'slauth_id_token',
-          'slauth_expires_at',
-        },
-        reason: 'all four keys must be attempted despite the failure',
-      );
+      expect(store.deleteAttempts.toSet(), {
+        'slauth_access_token',
+        'slauth_refresh_token',
+        'slauth_id_token',
+        'slauth_expires_at',
+      }, reason: 'all four keys must be attempted despite the failure');
       // The keys whose delete did not throw are actually gone.
       expect(store.data['slauth_access_token'], isNull);
       expect(store.data['slauth_id_token'], isNull);

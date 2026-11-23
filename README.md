@@ -63,4 +63,4 @@ Revert to the git dependency (pinned to a tag) before committing the app.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a matrix over the
 three package directories on every push to `main` and every PR, checking each
 with `dart format --set-exit-if-changed`, `flutter analyze`, and `flutter test`
-on Flutter 3.44.6.
+on Flutter 3.47.8.
